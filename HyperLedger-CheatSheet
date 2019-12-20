@@ -1,0 +1,727 @@
+mkdir hello
+cd hello/
+vi hello.go
+go run hello.go
+
+go install .
+
+-------------------------------------------------------------------------------------------------------------
+//make bin public
+export PATH="$PATH:/home/tomahawk/tools/jdk1.8.0_92/bin"
+source .profile //universal profile ~/.profile
+_________________________________________________________________________________________________________________________________________________________
+BINARIES...
+
+ORDERER
+	1. Is implimented as a single binary file it requires the genesis block for initialization.
+	2. The configuration of orderer is managed in a configuration YAML file (orderer.yaml).
+	3. Properties may be overridden by setting Environment Variable.
+	4. Orderer use kafka/solo/raft for distribution of block data
+		- by using solo you can only have one instance of orderer(single point of failure).
+	5. Orderer writes to the storage(RAM(dev)/filesystem(pro)) can be configured.
+	6. Orderer binary exposes GRPC to peer and client which can be secured by using TLS.
+	7. When orderer binary is launched by genesisblock it looks for orderer.yaml which is made available to the binary by using env. variable FABRIC_CFG_PATH=$PWD which points to orderer.yaml
+	8. Orderer binary also needs access to the Orderer MSP.
+	9. Orderer binary writes log messages to stderr and it is controlled by env. variable FABRIC_LOGGING_SPEC = (FAYTAL|PANIC|ERROR|WARNING|INFO|DEBUG)
+	10.Fabric of the log messages configured with env variable FABRIC_LOGGING_FORMAT a default is already set but can be changed according to requirements.
+	11.Location of the ledger wherer orderer writes is configured in orderer.yaml(Location), may be overridden with env variable ORDERER_FILELEDGER_LOCATION=$HOME/ledgers/orderer/org/ledger
+	12.Orderer binary uses levelDB and levelDB use the location configured to write data(always point to the file system of orderer VM only).
+	
+	//orderer requires access to the genesis block of orderer to initialize the orderer channel
+	//this block can be dynamically generated or the block file path can be provideed in:
+		GenesisMethod:
+						provisional(dev): Dynamically generated genesis.
+							//for dynamic GenesisProfile should be provided in configtx.yaml file in a fact configtx.yaml file should also be provided in orderer.yaml file
+						file(pro) : genesis block provided as a file.
+							//for file specification of the file location should be provided in GenesisFile section.
+	
+	CSP(crypto service provider) & MSP
+	-> a CSP exposes function Encrypt, Decrypt, Key Pair Generation, Private Key Security, Message Digest and Many more 
+	   orderer required to carry out all of these cryptographic function.
+	   //there are two types of CSP
+			- software based
+			- hardware based (PKCS#11 CSP)
+		//the CSP is configurred for orderer by providing the parameters in BCSP(Block Chain Crypto Service Provider) under general.
+	
+	//Orderer needs access to the MSP crypto material, there's need for orderer to get cacerts to validate the incoming messages it needs access to the keystore as well as signcerts
+	//any messag that goes out of the orderer is signed by the privatekey of orderer using CSP.
+	//The orderer's MSP is provided using two elements under general section
+		- LocalMSPID: Local MSP ID must match Orderer Org's MSP ID (in configtx.yaml Organizations: &Orderer ID:)
+		- LocalMSPDir: Location of the MSP folder.
+	
+	//The orderer needs to be setup for accepting connections from the peers, this is done by setting two configuration elemebnts.
+		- ListenAddress: IP Address on which orderer will accept incoming connections
+		- ListenPort: Port number. Typical port number = 7050
+		//When the orderer is launched it starts to listen on the specified IP nad port and peers are setup to connect to orderer using this IP and port number.
+		//GRPC server implementation allows the TCP connection to kept alive i.e open and this is done for the TCP resource optimization puposes.
+		//peers send heartbeats to the orderer and orderer has to send back response. (If heartbeats rate is more than the response should also be greater which will cost resource)
+		//If peer starts to send heartbest more frequently than server will disconnect the peer connection based on the "ServerMinInterval" if it is set to 20s and peer is pings every 15s than the server will disconnect the peer.
+			KeepAlive:
+				ServerMinInterval:
+		//The GRPC server also sends ping to peer on regular basis depending upon
+				ServerInterval:
+		//If the server doesnt get any responce within the time specified it will disconnect the peer.
+				ServerTimeout:
+		//GRPC has TLS/SSL integration i.e it supports Server Authentication, Data Encryption, Client Authentication.
+	
+	//Server Authentication, Data Encryption
+	//Enabling TLS on the orderer
+		TLS:
+			Enabled: true
+			PrivateKey: path to the server.key
+			Certificate: path to the TLS certificate server.crt
+			RootCAs: list of Root CA's TLS certificates ca.crt
+			
+			export ORDERER_GENERAL_TLS_ROOTCAS=[./ , ./ .....]
+		//In production environment these certificates are given by the organization but in production it will be generated by cryptogen.
+	//Client authentication	(mutual ssl between the Peers and Orderers)
+		TLS:
+			ClientAuthRequired: true|false
+								#false, accepts connection from any peer.
+			#if true than have to set ClentRootCAs:
+				ClientRootCAs: List of Client CA certs that can be trusted.
+				
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------	
+	#orderer.yaml
+	#this values can ve overriden by environment variables at runtime
+	
+	General: 							#ORDERER_GENERAL_...
+		GenesisMethod: file									#GenesisMethod: provisional	
+		GenesisFile: ./genesis.block						#GenesisProfile: profile_name
+		LedgerType: file									#LedgerType: json(dev)/LedgerType: ram(dev)
+		BCCSP:
+			Default: SW										#Default: PKCS11
+			SW:
+				HASH: SHA2
+				Security: 256								#key size
+				
+				#Location of the keystore if not provided default is 'LocalMSPDir/keystore'
+				FileKeyStore:
+					Keystore:	
+		
+		#Location of the MSP folder.
+		LocalMSPDir: ./crypto-config/ordererOrganizations/doamin/orderers/domain/msp
+		
+		#Local MSP ID must match Orderer Org's MSP ID (in configtx.yaml Organizations: &Orderer ID:)
+		LocalMSPID: OrdererMSP
+		
+		#Listen address: The IP on which to bind to listen.
+		ListenAddress: 127.0.0.1
+		
+		#Listen port: The port on which to bind to listen.
+		ListenPort: 7050
+		
+		Keepalive:
+			#Disconnect the client if the time between pings is less than the time specified.
+			ServerMinInterval: 60s
+			
+			#Server pings the peer for every open connection
+			ServerInterval: 7200s
+			
+			#Server expects the peers to respond to pings within
+			ServerTimeout: 20s
+		
+		TLS:
+			Enabled: true
+			PrivateKey: ./server.key
+			Certificate: ./server.crt
+			RootCAs:
+				- ./ca.crt
+			ClientAuthRequired: false
+			ClientRootCAs:
+		
+	#if LedgerType is file than parameters have to be set in FileLedger section.
+	FileLedger: 						#ORDERER_FILELEDGER_...
+		
+		#Directory for the ledger data(json|db files) if location is not set than temporary folder is used to save the data.
+		Location: /home/ledgers/orderer/org/ledger
+		
+		#The prefix to be used only when generating a ledger directory in temporary space.
+		Prefix: hyperledger-fabric-ordererledger
+		
+	#if LedgerType is ram than parameters have to be set in RAMLedger section.
+	RAMLedger:
+		
+		#Number of blocks that is retained
+		HistorySize:
+		
+	Kafka:
+	
+	Debug: 								#ORDERER_DEBUG_...
+	
+	#for monitoring orderer and generating alert
+	Operations: 
+
+	#Configuration for collection of metrics emitted by orderer.
+	Metrices: 
+	
+	#Configuration of consensus plug-in
+	Consensus: 
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------	
+	//and can use "orderer" command to launch the binary
+_________________________________________________________________________________________________________________________________________________________
+PEER
+	- Launch as a peer process it becomes node in the hyperledger fabric.
+	- Used as a utility for managing peer configuration and the network configuration.
+	- peer is dependent on the configuration written in "core.yaml" and can also be configured by environment variables.
+	- peer config file "core.yaml" file can also be configured as env. variable "FABRIC_CFG_PATH"
+	- on launch the peer reads the location of core.yaml file from env. variable and reads the yaml file overrides with env. variable if any reads the MSP than connects to the orderer and writes data to the storage location.
+	- like the orderer peer binary also has a embedded GRPC server and it exposes GRPC services the services are used by:
+		clients,
+		Application,
+		Utilities,
+		SDKs,
+		and peer binrary itself.
+	- peer also levrages CSP
+	
+	/*how an application channel is created in a network*/
+		# The "configtxgen" uses "configtx.yaml" and "core.yaml" file to create channel transaction file "channel.tx" than admin of one of the organization will use the peer binary to create channel on the network which will require "channel.tx".
+		# after the execution of command to create channel using peer binary it invokes a GRPC service on the orderer to create the chanel, once the channel gets created succesfully a file  gets written in the peer's file system "<channel_name>.block" (Genesis block of the channel).
+	
+	$ peer <command> <subcommands> --flags
+			|					|
+			|	 help			|
+			|	 version		|
+			|	 node	   --> start|status												$ peer node start -o <address_of_orderer>
+			|
+			|				  /- getlevel: current logging level for peer module		$ peer logging getlevel gossip
+			'--> logging   --> - revertlevels: set the level for the peer module		$ peer logging revertlevels
+							  \- setlevel: Set logging level for peer module			$ peer logging setlevel gossip INFO
+							  
+				 chaincode	
+									# if the policy requires .tx file to be signed by multiple organization than it should be signed before channel creation.
+							     /- create: create the channel on the network		    $ peer channel create -o <adress_of_orderer> -f <path_to_file> -c <channel_name>
+							    /	#after execution by admin of the org it receives the genesis block of the channel, other orgs receives copy of genesis block by fetch operation.
+							   /- join:	peer joins the specified channel			    $ peer channel join -o <address_of_orderer> -b <path_to_block file>
+							  /	  #the join operation is executed by the admin of the organization on success it initializes Ledger and the State Database of the channel it requires the genesis block file.
+							 /-	list: lists the channels that peer has joined			$ peer channel list
+							/
+				 channel  --> fetch: performs a operation on orderer to fetch a block	$ peer channel fetch newest|oldest|<block_number>|config -c <channel_name> -o <orderer_ip> |optional: [output file name]
+						   \  #fetch config command is commonly used to fetch configuration for the blockchain network so that it can be changed(by using configxlator) and re-submit the updated config file as a transaction signed by one or more organization admin(signconfigtx) based on the policy.
+							\- getinfo: gets information on the specified channel		$ peer channel getinfo -c <channel_name>
+							 \ #gets information of the channel from the local block chain current height and current Block Hashes
+							  \- signconfigtx: for signing the config transaction file	$ peer channel signconfigtx -f <config_file>
+							   \ #this command is used to sign the updated config. transaction by admin using its identity, the input for the command is the updated config file peer binary uses admin MSP to sign the config file.(changes made by signconfig is 1. Admin certificate is added, 2. Payload signed by admin's key)
+							    \- update: updates the existing channel config			$ peer channel updatte -f <configFile> -c <channelId> -o <ordererUrl> 
+								   #update command enables admin to subit the updated(signed config) to the orderer, it submits the config transaction to the orderer, orderer validates the transaction then sends the transaction to the all the peers in the network.
+				 
+	$ kilall peer		
+				 
+	//Logging level may be controlled on per <module> basis
+		gossip, grpc, ledger, msp, policies, peer
+	//levels: DEBUG, WARNING, ERROR, INFO, NOTICE, CRITICAL
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------				
+//core.yaml
+	
+	
+	
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+________________________________________________________________________________________________________________________________________________________
+
+
+_________________________________________________________________________________________________________________________________________________________
+//Certificates: Certificate is issued to all the identities in the network such as orderers, peers, participants, 
+				it is also issued to the memebers i.e organization who is part of the network.
+				
+//Certification-Authority: Componenets such as orderer and peers are issued certificates by certification-authority.
+						   The Identity management is not centralized each member organization has its own CA to manage their organization
+				
+				
+//cryptogen(only in dev env.): Is a commandline tool to generate crypto material which refers to the certificates and keystore.
+			 Developer has to provide configuration in yaml file (crypto-config.yml) than it will generate keygen and certificates for you.
+			 But it is not to be used in production, because real identities are issued by CA.
+
+			cryptogen <command> --flags <args>
+				cryptogen help
+				cryptogen <command> --help
+				cryptogen version
+				cryptogen showtemplate
+				cryptogen generate --config=./crypto-config.yaml
+				cryptogen generate --config=./crypto-config.yaml --output=<outputfolder>
+				cryptogen extend --config=<extension config file>
+				
+//cryptogen tool by default generates artifacts for the user called the admin user.
+
+//Step 1
+In the first step, we would generate all the crypto elements for all the organizations. We also generate admin and 1 user account for each organization.
+--------------------------------------------------crypto-config.yml-------------------------------------------------------------------------------
+# it declares 4 organization 2 peer each 5 orderers and 4 CA one org each
+OrdererOrgs:					# list of orderer organization managing the orderers
+
+  - Name: Orderer
+    Domain: workspace
+    EnableNodeOUs: true
+#------------------this---------------------
+    Template:					# also known as nodes
+      Start: 1
+      Count: 5
+#------------------or-----------------------	  
+	Specs:						#	also known as nodes
+		- Hostname: orderer1
+		- Hostname: orderer2
+		- Hostname: orderer3
+		- Hostname: orderer4
+		- Hostname: orderer5
+#------------------------------------------     
+
+PeerOrgs:						# list of member organization managing the peers
+  - Name: developers		    # org name
+    Domain: developers.workspace
+    EnableNodeOUs: true
+#------------------------------	# define the anchor nodes
+    Template:
+      Start: 1					# two peers will be created peer1 and peer2
+      Count: 2
+#-----------or-----------------
+	Specs:
+		- Hostname: devpeer
+		- CommonName: devpeer
+#------------------------------
+    Users:						# define users
+      Start: 1
+      Count: 1
+
+  - Name: accounts
+    Domain: accounts.workspace
+    EnableNodeOUs: true
+    Template:				   # also known as nodes
+      Start: 1
+      Count: 2
+    Users:
+      Count: 1				   # number of users in the org
+  
+  - Name: hr
+    Domain: hr.workspace
+    EnableNodeOUs: true
+    Template:
+      Start: 1
+      Count: 2
+    Users:
+      Start: 1
+      Count: 1
+
+  - Name: marketing
+    Domain: marketing.workspace
+    EnableNodeOUs: true
+    Template:
+      Start: 1
+      Count: 2
+    Users:
+      Start: 1
+      Count: 1
+	  
+==================================================================================================================================================
+$ cryptogen generate --config=./crypto-config.yaml
+==================================================================================================================================================
+	// the orderer binary needs to access certificates and keystore in msp and tls 
+	// the admin needs the access certificates nad keystore in msp and tls 
+	
+	>crypto-config
+		> ordererOrganization
+			> workspace
+				> ca
+				> msp
+				> orderers
+					> orderer1.workspace
+						> msp
+							> admincerts								# Admin's public certificate
+							> cacerts
+							> keystore
+								> f6b81ajlknfjh12_mkjna34h348al54hkgf	# private key of orderer
+							> signcerts
+								> orderer1.workspace-cert.pem  			# Public key of orderer
+						> tls											# if tls is enabled
+					> orderer5.workspace
+				> tlsca
+				> users
+					> Admin@workspace
+						> msp
+						> tls
+		> peerOrganization
+			> accounts.workspace
+				> ca
+				> msp
+				> peers
+				> tlsca
+				> users
+			> developers.workspace
+			> hr.workspace
+			> marketing.workspace
+			
+			
+	// the peer binary needs to access certificates and keystore
+	// admin will use the certificates/key:
+		-> Start/Stop peer
+		-> Install/Start Chaincode
+		-> Config Changes
+	// users will use the certificates/key:
+		-> Invoke chaincode
+		-> Query Chaincode
+		
+------------------------------Add peers/orderers once its generated--------------------------------
+	//crypto-config.addpeer.yaml
+	PeerOrgs:						
+		- Name: developers		    
+		  Domain: developers.workspace
+		   Template:
+			- Hostname: devpeer2
+			  CommonName: devpeer2
+			  
+	$ cryptogen extend --config=./crypto-config.addpeer.yaml --input=./crypto-config
+_________________________________________________________________________________________________________________________________________________________
+
+//Step 2
+In this step, we are going to generate the orderer genesis block.
+For this, we’d used configtxgen tool and consumes configtx.yaml file.
+
+//configtxgen is a command line utility for managing configuration artifacts:
+	- Genesis Block(Orderer) : 
+	- Channel Tx : Create Channel transaction. So, when you have to create application channel you can use the configtxgen to create the channel transaction.
+		2 types of channel
+			-> Orderer System channel which is generated form genesis block
+			-> Application channel in respect to each application.
+	- Anchor Peer Tx : Anchor peer update transaction i.e. for managing the anchor peer of the transaction.
+
+//significance of orderer genesis block
+	- It's always used to bootstrap your ordering service nodes for example after shutdowns or restarts.
+	- It servs as a genesis block for special channel managed by the orderer admins which includes a list of the organizations permitted to create channels.
+	- In fact, orderer system channel bootstrapped using this genesis block. 
+	  Orderer genesis block contains consortium information which he called a network definition, basically it contains all certificates of organizations root CAs. 
+	  Therefore allowing to initialize channels MSPs and use those root CAs certificates to validate ACLs, endorsements and clients signatures.
+	  
+	$ configtxgen command [flags]
+		$ configtxgen -help
+		$ configtxgen -version
+		
+		$ configtxgen -profile <profile> -channelId <channel> -outputBlock <file_name>
+		//if channel is not specified it will generate with default channel with id testgenid
+		//the generated file .block is used to for launching of the orderer
+		
+		$ configtxgen -outputCreateChannelTx <channel> -profile <profile> -chanelID <chanelID>
+		//the generated file .tx is used by the peer binary for submitting a trnsaction for creation of application channel.
+		//or .tx is used for creation of the channel
+		
+		$ configtxgen -outputAnchorPeersUpdate <.tx> -profile <profile> -asOrg <org_name>
+		//generates .tx file 
+		//The channel configuration is the main component of any fabric network. 
+		//If any changes made in the network like a new organization in the network or making existing peer as an anchor peer, 
+		//the channel is unaware of these changes. So, to make these changes as part of the channel we have to update the channel configuration.
+		//In case of making a peer as an anchor peer, we have to create a new anchorpeer.tx file
+		
+-----------------The generated artifacts are binary file to review it we have to use expose command to view in JSON mode-----------------------------------------
+		$ configtxgen -inspectBlock <block_file_name.block>			
+		$ configtxgen -inspectChannelCreateTx <channelName.tx>		
+		$ configtxgen -inspectChannelCreateTx <anchor.tx>
+		
+		$ configtxgen -printOrg <organization_name>
+		//to get organization detail in JSON format
+		
+Before that, we have to set up an environment variable.
+//configtx.yaml file is specified with hthe help of environment variable.
+	export FABRIC_CFG_PATH=$PWD
+	- if not set tool searches the current folder for configtx.yaml
+	
+//you may override the parameters in configtx file by using environment variables 
+	eg. export CONFIGTX_ORDERER_ORDERERTYPE=kafka
+	
+	  
+//configtx file has six sections:
+	-> Organizations : that lists the member organization in the network.
+		Refrences to the organization is made from different section form Application Section from orderer section as well as profile section. 
+		So, to avoid repeating the organiztion details this section list out the organization detail in form YAML anchors(&)
+		
+	-> Orderer : configuration for the orderer.
+	
+	-> Application : application configuration.
+	
+	-> Channel : channel related properties.
+	
+	-> Capabilities : binary version management across the network.
+	
+	-> Profiles : allows the setup of multiple configuration in single file.
+	 
+--------------------------------------------configtx.yaml----------------------------------------------
+Organizations:
+    - &OrdererOrg
+        Name: OrdererOrg
+        ID: OrdererMSP
+        MSPDir: crypto-config/ordererOrganizations/workspace/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('OrdererMSP.member')"
+            Writers:
+                Type: Signature
+                Rule: "OR('OrdererMSP.member')"
+            Admins:
+                Type: Signature
+                Rule: "OR('OrdererMSP.admin')"
+
+    - &Org1
+        Name: Org1MSP
+        ID: Org1MSP
+        MSPDir: crypto-config/peerOrganizations/developers.workspace/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('Org1MSP.admin', 'Org1MSP.peer', 'Org1MSP.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('Org1MSP.admin', 'Org1MSP.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('Org1MSP.admin')"
+        AnchorPeers:
+            - Host: peer1.developers.workspace
+              Port: 7051
+
+    - &Org2
+        Name: Org2MSP
+        ID: Org2MSP
+        MSPDir: crypto-config/peerOrganizations/accounts.workspace/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('Org2MSP.admin', 'Org2MSP.peer', 'Org2MSP.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('Org2MSP.admin', 'Org2MSP.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('Org2MSP.admin')"
+
+        AnchorPeers:
+            - Host: peer1.accounts.workspace
+              Port: 9051
+
+    - &Org3
+        Name: Org3MSP
+        ID: Org3MSP
+        MSPDir: crypto-config/peerOrganizations/hr.workspace/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('Org3MSP.admin', 'Org3MSP.peer', 'Org3MSP.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('Org3MSP.admin', 'Org3MSP.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('Org3MSP.admin')"
+
+        AnchorPeers:
+            - Host: peer1.hr.workspace
+              Port: 11051
+        
+    - &Org4
+        Name: Org4MSP
+        ID: Org4MSP
+        MSPDir: crypto-config/peerOrganizations/marketing.workspace/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('Org4MSP.admin', 'Org4MSP.peer', 'Org4MSP.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('Org4MSP.admin', 'Org4MSP.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('Org4MSP.admin')"
+
+        AnchorPeers:
+            - Host: peer1.marketing.workspace
+              Port: 13051
+
+Capabilities:
+    Channel: &ChannelCapabilities
+        V1_4_3: true
+        V1_3: false
+        V1_1: false
+    Orderer: &OrdererCapabilities
+        V1_4_2: true
+        V1_1: false
+    Application: &ApplicationCapabilities
+        V1_4_2: true
+        V1_3: false
+        V1_2: false
+        V1_1: false
+
+Application: &ApplicationDefaults
+    Organizations:
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+
+    Capabilities:
+        <<: *ApplicationCapabilities
+
+Orderer: &OrdererDefaults
+	# Orderer Type: solo
+	# Addresses:
+	#	- localhost:7050
+	
+	# The amount of time to wait before creating a batch/block
+    BatchTimeout: 2s
+	
+	# Controls the number of messages batched into a block 
+    BatchSize:
+        MaxMessageCount: 10
+		# works when an individual transaction size is huge and cant be accomodated in 512KB
+        AbsoluteMaxBytes: 99 MB
+		# most of the time is blocks can be packed inside 512KB
+        PreferredMaxBytes: 512 KB
+    Organizations:
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+        BlockValidation:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+
+Channel: &ChannelDefaults  # Default set of parameters for the channels
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+
+    Capabilities:
+        <<: *ChannelCapabilities
+
+Profiles: # Profile are named subsection under profiles section
+	# and each of this profile are needed for generation of configuration components,
+	# attributes in each of the profile depends on the configuration componenet type.
+	# profiles refer to elements in other section of configtx.yaml
+    FourOrgsChannel:
+        Consortium: SampleConsortium
+        <<: *ChannelDefaults
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *Org1
+                - *Org2
+                - *Org3
+                - *Org4
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    Raft:	
+        <<: *ChannelDefaults
+        Capabilities:
+            <<: *ChannelCapabilities
+        Orderer:
+            <<: *OrdererDefaults
+            OrdererType: etcdraft
+            EtcdRaft:
+                Consenters:
+                - Host: orderer1.workspace
+                  Port: 7050
+                  ClientTLSCert: crypto-config/ordererOrganizations/workspace/orderers/orderer1.workspace/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/workspace/orderers/orderer1.workspace/tls/server.crt
+                - Host: orderer2.workspace
+                  Port: 7050
+                  ClientTLSCert: crypto-config/ordererOrganizations/workspace/orderers/orderer2.workspace/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/workspace/orderers/orderer2.workspace/tls/server.crt
+                - Host: orderer3.workspace
+                  Port: 7050
+                  ClientTLSCert: crypto-config/ordererOrganizations/workspace/orderers/orderer3.workspace/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/workspace/orderers/orderer3.workspace/tls/server.crt
+                - Host: orderer4.workspace
+                  Port: 7050
+                  ClientTLSCert: crypto-config/ordererOrganizations/workspace/orderers/orderer4.workspace/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/workspace/orderers/orderer4.workspace/tls/server.crt
+                - Host: orderer5.workspace
+                  Port: 7050
+                  ClientTLSCert: crypto-config/ordererOrganizations/workspace/orderers/orderer5.workspace/tls/server.crt
+                  ServerTLSCert: crypto-config/ordererOrganizations/workspace/orderers/orderer5.workspace/tls/server.crt
+            Addresses:
+                - orderer1.workspace:7050
+                - orderer2.workspace:7050
+                - orderer3.workspace:7050
+                - orderer4.workspace:7050
+                - orderer5.workspace:7050
+
+            Organizations:
+            - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:			
+            - <<: *OrdererOrg
+        Consortiums:
+            SampleConsortium:
+                Organizations:
+                - *Org1
+                - *Org2
+                - *Org3
+                - *Org4
+
+
+==================================================================================================================================================
+//To generate orderer genesis block artifact
+$ configtxgen -profile Raft -channelID workspace-sys-channel -outputBlock 
+./channel-artifacts/genesis.block
+
+$ configtxgen -inspectBlock ./channel-artifacts/genesis.block
+
+//to generate channel transaction artifact
+Before that, set the channel name that we are going to create as an environmental variable.
+$ export CHANNEL_NAME=workspace
+
+$ configtxgen -profile workspaceChannel -outputCreateChannelTx ./channel-artifacts/workspace.tx -channelID $CHANNEL_NAME
+
+//to generate anchor artifact for anchor peer update
+
+For developer organization
+$ configtxgen -profile workspaceChannel -outputAnchorPeersUpdate ./channel-artifacts/Org1MSPanchors.tx -channelID $CHANNEL_NAME -asOrg Org1MSP
+
+For accounts organization
+$ configtxgen -profile workspaceChannel -outputAnchorPeersUpdate ./channel-artifacts/Org2MSPanchors.tx -channelID $CHANNEL_NAME -asOrg Org2MSP
+
+For hr organization
+$ configtxgen -profile workspaceChannel -outputAnchorPeersUpdate ./channel-artifacts/Org3MSPanchors.tx -channelID $CHANNEL_NAME -asOrg Org3MSP
+
+For marketing organization
+$ configtxgen -profile workspaceChannel -outputAnchorPeersUpdate ./channel-artifacts/Org4MSPanchors.tx -channelID $CHANNEL_NAME -asOrg Org4MSP
+==================================================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

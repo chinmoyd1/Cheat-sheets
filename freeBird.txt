@@ -1,0 +1,42 @@
+Hi Chinmoy Debnath,
+VM ownership in FreeBird has now changed.
+Please find below updated VM ownership details:
+VM name 	in-corcto3812
+Old owner	Dinesh Rivankar
+New owner	Chinmoy Debnath
+Project	BlockChain_IDE
+If you have any query please Raise a Service (Remedy) Request.
+In case of any queries, kindly contact FreeBird_Support.
+Regards,
+FreeBird 
+
+
+
+
+
+
+
+
+
+cp -avr fabric-sample/fabric-samples/ .
+
+These commands worked for me:
+
+	$ dockerd
+
+	$ dockerd &
+
+This runs dockerd deamon as a background process (more useful)
+These commands didn't work for me:
+
+	$ sudo service start docker or $ sudo service restart docker
+
+	$ sudo systemctl start docker
+	
+cp -avr temp_work/fabric-samples/ home/fabric/
+
+	
+	
+	
+	
+	

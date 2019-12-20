@@ -1,0 +1,104 @@
+--------------------------------------------------------------------------------------------------
+1. What is a context in Java?
+--------------------------------------------------------------------------------------------------
+A context can be said as the running environment that is provided to the current unit of work. It may be the environment variables, instance variables, state of the classes, and so on. When I say this, I mean that ServletContext represents the servlet’s environment within its container, similar to ApplicationContext, which represents the Spring application’s core environment within the Spring container.
+___________________________________________________________________________________________________
+2. Spring Context Configuration
+---------------------------------------------------------------------------------------------------
+In Spring web applications, there are two contexts that gets initialized at server startup, each of which is configured and initialized differently. One is the “Application Context” and the other is the “Web Application Context“.
+___________________________________________________________________________________________________
+2.1 ApplicationContext (Business Logic Componenets and DataAccess Classes)
+---------------------------------------------------------------------------------------------------
+Every Spring webapp has an associated root application context that is tied to its lifecycle. The root web application context is managed by a listener of class org.springframework.web.context.ContextLoaderListener, which is part of the spring-web module.
+By default, the listener will load an XML application context from /WEB-INF/applicationContext.xml
+
+Application Context is the context initialized by a ContextLoaderListener or ContextLoaderServlet that we define in our application’s web.xml file and the configuration would look something like this:
+
+		<listener>
+			<listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
+		</listener>
+		 
+		<context-param>
+			<param-name>contextConfigLocation</param-name>
+			<param-value>/WEB-INF/root-context.xml</param-value>
+		</context-param>
+		
+In the above configuration, we are asking Spring to load root-context.xml and create an Application Context from it. If contextConfigLocation is not mentioned as in the below snippet, it will by default look for /WEB-INF/applicationContext.xml.	
+
+		<listener>
+			<listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
+		</listener>
+___________________________________________________________________________________________________
+2.2 WebApplicationContext (Web Related Components)
+---------------------------------------------------------------------------------------------------
+WebApplicationContext is the another servlet-specific context that is loaded based on the dispatcher servlets configured in the application’s web.xml file. So each dispatcher servlet has its own servlet-context initialized from <servlet-name>-servlet.xml file. This allows us to categorize the incoming requests based on the servlet’s url-pattern and handle them accordingly, such that one of dispatcher servlets could help serving the web pages via Controller, while another one could be used to implement a stateless REST web service. So with that, we understand that a single web application can have multiple dispatcher-servlet configurations, thereby having multiple web-application contexts.
+
+If we want to change the name of the dispatcher-servlet file name or change it’s location, we can add init-param with contextConfigLocation as param-name, as can be seen below –
+
+		<servlet>
+			<servlet-name>mvc-dispatcher</servlet-name>
+			<servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+			<load-on-startup>1</load-on-startup>
+		</servlet>
+			
+		<servlet-mapping>
+			<servlet-name>mvc-dispatcher</servlet-name>
+			<url-pattern>/</url-pattern>
+		</servlet-mapping>
+
+The mvc-dispatcher is used to define which file to load the Spring XML configurations. By default, it will look for Spring XML configuration file by joining the servlet name mvc-dispatcher with -servlet.xml.
+
+		<servlet>
+			<servlet-name>mvc-dispatcher</servlet-name>
+			<servlet-class>org.springframework.web.servlet.DispatcherServlet</servlet-class>
+			<init-param>
+				<param-name>contextConfigLocation</param-name>
+				<param-value>/WEB-INF/sample-dispatcher-servlet.xml</param-value>
+			</init-param>
+			<load-on-startup>1</load-on-startup>
+		</servlet>
+		
+So with dispatcher-servlet init-param specified as in the above web.xml code snippet, Spring no more finds the dispatcher-servlet context file with the name mvc-dispatcher-servlet.xml, but instead looks for the one specified as the init-param value for contextConfigLocation, i.e. sample-dispatcher-servlet.xml		
+___________________________________________________________________________________________________
+2.3 Difference between the two contexts
+---------------------------------------------------------------------------------------------------
+Firstly, as already mentioned, ApplicationContext is the root-context, that has bean configurations we might want to use (and re-use) across the entire application as singletons. 
+- There is always a single application context in a web application. 
+- Whereas, there can be multiple WebApplicationContexts for each of the dispatcher servlets we specify in our application’s web.xml.
+
+Note: WebApplicationContext internally extends ApplicationContext, and as a child inherits all the beans from its parent. So we can also override the parent bean within our WebApplicationContext.
+
+It’s always better to keep a clear separation between middle-tier services such as business logic components and data access classes (which we prefer defining in the ApplicationContext XML), and web-related components such as controllers and view-resolvers (which we prefer defining in the respective dispatcher-servlet‘s WebApplicationContext).
+
+___________________________________________________________________________________________________
+3.ApplicationContextAware interface in Spring
+---------------------------------------------------------------------------------------------------
+Sometimes it is needed to access context object inside bean class to create another bean. But the context object is created into another class, how we access this context object inside the bean class, once it is created inside the invoking bean factory class. This can be achieved using ApplicationContextAware class instance variable.
+
+In this case, to get access of singleton bean instance, there is an interface is defines, which is known as ApplicationContextAware it provides a setter () method that is used to access context variable:
+		@Override 
+		public void setApplicationContext(ApplicationContext context) throws BeansException { 
+			this.context = context; 
+		}
+
+public class Triangle implements ApplicationContextAware{
+	private ApplicationContext context = null;
+	//ApplicationContext context = new ClassPathXmlApplicationContext("ApplicationInstance.xml");
+	@Override 
+	public void setApplicationContext(ApplicationContext context) throws BeansException { 
+		this.context = context; 
+	}	
+---------------------------------------------------------------------
+	protected Object getInstance(){
+		if(getContext().containsBean(sComponent)) {
+			return getContext().getBean(sComponent);
+		}
+		else {
+			throw new NotSupportedException(NotSupportedException.NOT_SUPPORTED_MESSAGE,sComponent);
+		}
+	}
+
+	public static ApplicationContext getContext() {
+			return context;
+	}
+}
