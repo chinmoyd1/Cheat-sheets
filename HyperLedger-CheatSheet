@@ -188,8 +188,7 @@ PEER
 			|				  /- getlevel: current logging level for peer module		$ peer logging getlevel gossip
 			'--> logging   --> - revertlevels: set the level for the peer module		$ peer logging revertlevels
 							  \- setlevel: Set logging level for peer module			$ peer logging setlevel gossip INFO
-							  
-				 chaincode	
+							  	
 									# if the policy requires .tx file to be signed by multiple organization than it should be signed before channel creation.
 							     /- create: create the channel on the network		    $ peer channel create -o <adress_of_orderer> -f <path_to_file> -c <channel_name>
 							    /	#after execution by admin of the org it receives the genesis block of the channel, other orgs receives copy of genesis block by fetch operation.
@@ -204,9 +203,49 @@ PEER
 							  \- signconfigtx: for signing the config transaction file	$ peer channel signconfigtx -f <config_file>
 							   \ #this command is used to sign the updated config. transaction by admin using its identity, the input for the command is the updated config file peer binary uses admin MSP to sign the config file.(changes made by signconfig is 1. Admin certificate is added, 2. Payload signed by admin's key)
 							    \- update: updates the existing channel config			$ peer channel updatte -f <configFile> -c <channelId> -o <ordererUrl> 
-								   #update command enables admin to subit the updated(signed config) to the orderer, it submits the config transaction to the orderer, orderer validates the transaction then sends the transaction to the all the peers in the network.
-				 
-	$ kilall peer		
+								   #update command enables admin to submit the updated(signed config) to the orderer, it submits the config transaction to the orderer, orderer validates the transaction then sends the transaction to the all the peers in the network.
+								   
+				
+				                   /- install: install commands allows admin for the copying of the chaincode to the peer 	 $ chaincode install -n chaincode1 -v 1.0 -l golang -p
+								  /	  # the chaincode must be available under a folder src of a parent folder specified in environment variable export GOPATH=/gopath/chaincode 	
+				                 /- isntantiate: to instantiate and launch a peer	$ chaincode instantiate -n <chaincode_name> -v <version> -c <constructor_arguments> '{"Args":["init","a","100","b","200"]}' -C <channel_name>
+						   	    /   # c-> JSON constructor, C-> channel on which the chaincode is to be instantiated, 
+						       /    # additional flags -P which declares the endorsment policy for the chaincode(default: any member of the organisation who is part of the channel) with
+							  /	    # -E name of the endorsement system chaincode (default is escc)
+							 /      # -V name of the verification system chaincode (default is vscc)
+				chaincode  --> list: to check for the installed and instantiated chaincode admin's can use this command	$ peer chaincode list --installed	$ peer chaincode list --instantiated -C <channel_name>
+							 \ # to see the installed chaincode use --installed flag, to see instantited use two flags one is --instantiated -C <channel_name>
+							  \- upgrade: $ peer chaincode upgrade -n <name_chaincode> -v <version> -C <channel_name> -c <constructor_args> '{"Args":["init","a","100","b","200"]}'
+							   \ # we can aslo use -P for policy upgrade with -E <endorsement_system_chaincode_name> and -V <verification_system_chaincode_name>
+								\# and on sucess it launches the new peer.
+								 \- query: 	$ peer chaincode query -n <chaincode_name> -C <channel_name> -c <query_function_argument> '{"Args":["FUNCTION-NAME", "a"]}'
+								  \	# chaincode query command is invoked on the local peer, the local peer reads the state of the local chaincode and sends back to the peer binary
+								   \- invoke: $ -n <chaincode_name> -C <channel_name> -c <query_function_argument> '{"Args":["FUNCTION-NAME", "a"]}'
+									\ # peer binary creates the transaction proposal and sends it out to the endorsing peers the endorsing peers simulates the execution of the chaincode endorses the transaction and sends back to peer
+									 \ # the peer binary the sends the endoresed transaction to the orderer, orderer creates the block and sends it to differnt peers in network.
+									  \- package: used to achive consistency of the chaincode across the network.	$ peer chaincode package -n <name_chaincode> -v <version> -l <lang> -p <chaincode_name> package_name.out
+										 # generates the package file which has snapshot of the codebase, name and version information
+										 # admin creates a package that includes the chaincode and the metadata for the chaincode, developer can make changes on the codebase but it wont get reflected on the package as it is already created.
+		__________________________________________________________________
+	   |		    query			   |		invoke					  |
+		------------------------------------------------------------------
+	   | 1. executed on local peer     | chaincode simulates on endorsers |
+	   | 2. reads the state from local | executes the transaction         |
+	   |	- no state change          | - may lead to state change       |
+	   |	- no transaction recorded  | - transaction recorded           | 
+	   |_______________________________|__________________________________|	
+	   
+	   eg: $ peer chaincode query -C acmechannel -n gocc -c '{"Args":["query","a"]}'
+		    100
+		   # to check th e current balance of 'a'
+		   $ peer chaincode invoke -C acmechannel -n gocc -c '{"Args":["invoke","a","b","10"]}'
+		   # to send 10 from 'a' to 'b'
+		   $ peer chaincode query -C acmechannel -n gocc -c '{"Args":["query","a"]}'
+		    90
+		   # so 10 has been transfered the current balance is 90.
+		   
+		   
+	$ kilall peer					
 				 
 	//Logging level may be controlled on per <module> basis
 		gossip, grpc, ledger, msp, policies, peer
