@@ -1,0 +1,422 @@
+sudo apt install docker.io
+
+sudo systemctl start docker / sudo service docker start
+
+sudo systemctl enable docker
+
+docker pull openzipkin/zipkin
+
+
+sudo docker run xyz..
+docker run -d -p 9411:9411 openzipkin/zipkin //use -d to run docker container in background so that it dont exit on ctrl+c
+docker attach containerId //to attach again so that it can be exited with ctrl+c
+
+docker ps
+docker ps -a
+
+docker stop xyz..
+
+docker rm xyz..
+
+docker images //shows all images available
+
+docker rmi image_name //to remove downloaded image, first stop and uninstall the image by  using rm
+
+docker run -it centos //-it is short for --interactive + --tty when you docker run with this command.. it would take you straight inside of the container
+docker run -it -d centos //detached mode
+
+docker login //unless you login it wont allow you to create image
+docker commit <containerId> chinmoy/ubuntu
+docker push chinmoy
+
+docker run ubuntu //as there are nothing executing inside os starts and stops
+docker run ubuntu sleep 5 // now the docker container starts and go to sleep when starts for 5 seconds then exits
+docker exec cat /etc/host //now when conainer is sleeping use the docker exec to execute a command inside the sleeping container
+
+
+docker start -i <name/id>
+
+sysctl -w vm.max_map_count=262144
+
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------
+DockerFile Commands - 
+	
+	FROM: It defines the base image to use to start the build process
+		FROM ubuntu
+		
+	RUN: Its takes the command as its argument and runs it to form the image. Unlike CMD, it actually is used to build the image.
+		RUN apt-get install cURL
+	
+	CMD: The command CMD, similar to RUN can be used to execute a particular command. However unlike RUN it is not executed during build, but when a container is instantiated.
+		CMD "echo" "Welcome To Edureka"
+	
+	ENTRYPOINT: arguments sets the concrete default application that is used every time the container is created using the image.
+		CMD "Welcome Hello"
+		ENTRYPOINT echo
+	
+	ADD: the add command gets two arguments asource and the other destination. Itbasically copies files from the host into th containers own filesystem.
+		ADD /src /destination
+	
+	ENV: The ENV command is used to set the environment variables (one or more). These variables consists of "key value" pairs which can be accessed within the conatiner by scripts and applications alike.
+		ENV JAVA_HOME /path
+	
+	WORKDIR: The WORKDIR directive is used to set where the command defined with CMD is to be executed
+		WORKDIR /path WORKDIR ~/
+	
+	EXPOSE: The EXPOSE command is used to associate a specified port to enable networking between the running process inside the container and the ouside world(i.e the host)
+		EXPOSE 8080
+		
+	MAINTAINER: This non-executing command declares a author, hence setting the author field of images. It should come after FROM command.
+		MAINTAINER authors_name
+	
+	USER: The USER directive is used to set the UID (or username) which is to run the container based on the image being built.
+		USER 751
+		
+	VOLUME: The VOLUME command is used to enable access from your container to a directory on the host machine(i.e. mounting it)
+		VOLUME ["/my_files"]
+	
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+Most used Docker Commands
+
+		docker --version:
+		
+		docker --help:
+		
+		docker pull: 		It is used to pull images from docker hub
+		
+		docker run: 		It is used to execute the image
+		
+		docker build:  		Build an image from a docker file     //docker build -t <MyUbuntuImage> .
+		
+		docker login:
+		
+		docker push:
+		
+		docker ps:
+		
+		docker images: 		To list all the images present
+		
+		docker start: 		Start container
+		
+		docker stop:
+		
+		docker kill:
+		
+		docker rm: 			Is used to remove container
+		
+		docker rmi:			To remove image from system.
+		
+		docker exec: 		It is used to acces  already running containers bash and perform some action.
+								$ docker exec -it <containerId> bash
+		
+		docker commit: 		This command creates a new image of an edited container on local repo.
+								$ docker commit <containerId> rick1113/myEdittedImage
+		
+		docker import:		This command is used to import the contents of a tar file(usually a Docker image) into your local repo.
+								$ docker import /home/rick/Downloads/myContainer
+		
+		docker export:		This command is used to export a Docker container into a tar file in your local system.
+								$ docker export --output="myContainer.tar" <containerId>
+		
+		docker container:	This is used to manipilate conatiners (running images)
+								$ docker container logs  <containerId>
+								$ docker container kill  <containerId>
+								$ docker container rm	 <containerId>
+								$ docker container run	 <containerId> : create a new container of an image, and execute the container. You can create N clones of the same image. 
+																		 The command is: docker run IMAGE_ID and not docker run CONTAINER_ID
+								$ docker container start <containerId> : Launch a container previously stopped. For example, if you had stopped a database with the command docker stop CONTAINER_ID, 
+																		 you can relaunch the same container with the command docker start CONTAINER_ID, and the data and settings will be the same.
+		
+		docker compose:	This command is used to power multi-container applications where various services will be hosted inside different containers.
+							$ docker-compose build	: Is used to build docker compose using YML file (Yet Another Markup Language).
+													  In YAML file we specifie which all containers we want to be active and the path of the dockerfile which will be used for creation of these conatiners or services.
+														  //docker-compose.yml
+														  $ docker-compose build 
+							$ docker-compose up		: It is used to start the docker-compose service which we built.
+														  $ docker-compose up -d
+		
+							$ docker-compose logs -f
+							$ docker-compose logs -f <appname>
+							$ docker-compose stop
+							$ docker-compose ps
+							$ docker-compose rm <container name>
+							$ docker-compose exec <container>
+							$ docker-compose exec <app_name> bin/bash
+							 
+							
+		docker network: This helps in viewing details about all the docker network deployed
+							$ docker network ls
+							
+							$ docker network inspect <network_name>
+		
+		docker swarm:	This command creates a network of Docker engines/hosts to execute containers in parallel (for scaling and high availability)
+							$ docker swarm init --advertise-addr 192.168.1.100
+							$ docker swarm join
+							$ docker swarm join-token
+							$ docker swarm leave
+		
+		docker service:	This is used to control any existsing Docker service (Containers/Compose/Swarm/Others..)
+							$ docker service ls
+							$ docker service ps
+							$ docker service scale
+							$ docker service stop
+							$ docker service logs
+							$ docker service rm
+							
+		docker volume:	To create a volume exposed to the os outside the container for storing data.
+							$ docker volume create <volume_name>
+							$ docker volume ls
+							$ docker volume inspect <volume_name>
+							$ docker volume rm <volume_name>
+							$ docker volume prune #to remove all volumes which are unused
+							
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//docker-compose.yml
+	
+	version: '3'
+	
+	
+	services:
+		service1:
+			image: 
+			environment:
+			
+			ports:
+			
+			networks:
+				- network1
+			volumes:
+		
+		service2:
+			build: .
+		    image: 
+			environment:
+			
+			ports:
+			
+			networks:
+				- network1
+			volumes:			
+	
+	networks:
+		network1:
+			driver: bridge
+	
+	volumes:
+		volume1
+		volume2
+		
+	/------------------------------------------------------------/
+	services:
+		app:
+			build:
+				context: .
+				dockerfile: Dockerfile
+				args:
+					- PYTHON_VERSION=3.7.0-alpine3.8				#or - PYTHON_VERSION=${PYTHON_VERSION}					#//.env.txt /n PYTHON_VERSION=3.7.0-alpine3.8
+			image: takacsmark/flask-redis:1.0
+			#env_file:
+			#	- .env.txt
+			environment:
+				- FLASK_ENV=development
+			ports:
+				- 5000:5000
+	
+	//Dockerfile
+		ARG PYTHON_VERSION
+		FROM python:$PYTHON_VERSION
+		WORKDIR /usr/src/app
+		COPY requirements.txt ./
+		
+		
+		
+		
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//docker-compose.yml
+
+	version: '3.0'
+	
+	# Define the service/container to be run
+	services:
+		angular:	#name of the first service
+			build: 	angular-app #specify the directory of the Dockerfile
+			ports:
+				- "4200:4200" #specify port mapping
+				
+		express:	#name of the second service
+			build: 	express-server #specify the directory of the Dockerfile
+			ports:
+				- "3000:3000" #specify ports mapping
+			links:
+				- database: #link this service to the database service
+		
+		database:	#name of the third service
+			image: 	mongo #specify image to build container from
+			ports:
+				- "27017:27017" #specify port forwarding
+				
+
+//Dockerfile
+	FROM node:6
+		RUN mkdir -p /usr/src/app
+		WORKDIR /usr/src/app
+		COPY package.json /usr/src/app
+		RUN npm cache clean
+		RUN npm installCOPY . /usr/src/app
+		EXPOSE 4200
+		CMD ["npm","start"]
+ 	
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Dockerfile
+FROM ubuntu
+RUN echo Hi, this is your daddy!
+
+//Dockerfile
+FROM openjdk:8
+MAINTAINER rick1113 <chinmoy1113@gmail.com>
+ADD target/authenticate-service-0.0.1-SNAPSHOT.jar authenticate-service.jar
+ENTRYPOINT ["java", "-jar", "/authenticate-service.jar"]
+EXPOSE 8400
+
+$ docker build -t "mycustomubuntu" .
+$ docker login
+$ docker tag mycustomubuntu <dockerId>/mycustomubuntu
+$ docker push <dockerId>/mycustomubuntu
+
+___________________________________________________________________________________________________________________________________________________________________________
+//DockerCompose
+//docker-compose.yaml
+	
+version: '3'
+
+services:
+	web:
+		image: ngix
+			pots:
+			- 9090:80
+	
+	database:
+		image: redis
+ 
+$ docker-compose config
+$ docker-compose up -d
+$ docker-compose up -d --scale database=4
+
+
+
+
+
+___________________________________________________________________________________________________________________________________________________________________________
+
+-----------------flags------------------
+--name 	: To add custom name to container.
+--rm 	: The flag --rm is used when you need the container to be deleted after the task for it is complete.
+-d		: where -d is short for --detach which means you just run the container and then detach from it so basically you run container in the background.
+-it 	: is short for --interactive + --tty, The -it runs Docker interactively (so you get a pseudo-TTY with STDIN)
+-itd 	: so if you run docker container with-itd it would run the-it options and detach you from the container, 
+		  so your container still running in the background even without any default app to ru
+-p		: for port mapping -p 8080:8080 
+-v      : volume, map a local directory inside the docker container to a volume(location) of the host os 
+
+
+
+--> docker run -itd ubuntu:xenial /bin/bash 
+	starts the container in the interactive mode (hence -it flag) that allows you to interact with /bin/bash of the container. 
+	That means now you will have bash session inside the container, so you can ls, mkdir, or do any bash command inside the container.
+	
+--> docker exec -it <containerId> bash
+	It is used to acces  already running containers bash and perform some action.
+	
+--> docker volume create myvol
+--> docker run --name MyJenkins -v myvol:/var/jenkins_home -p 8080:8080 -p 50000:50000 jenkins	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+-------------------------------Docker networking----------------------------------------
+Docker containers and services do not need to be aware that they are deployed on Docker, or whether their peers are also Docker workloads or not, 
+and this intriduces the concept of Docker Networking.	
+
+Container Network Model Objects
+	- Network Controller: Provides the entry-point into libnetwork.
+	- Driver: Provides the actual implementation that makes network work.
+	- Network: Is an implementation of CNM: Network
+	- End Point: Provides the connectivity for services exposed by container in a network.
+	- Sandbox: Represents container's network configuration.
+
+
+
+Overlay Network
+	- When connecting services on different node
+
+
+
+---------------------------Jenkins Docker Integratoin-----------------------------------
+
+ubuntu@node1:/var/run$ ls -lrth docker.sock
+srw-rw---- 1 root root 0 Oct 17 11:08 docker.sock
+ubuntu@ip-172-31-21-106:/var/run$ sudo chmod 666 /var/run/docker.sock
+ubuntu@ip-172-31-21-106:/var/run$ ls -lrth docker.sock
+srw-rw-rw- 1 root root 0 Oct 17 11:08 docker.sock
+
+$service jenkins status
+sudo chmod 777 /var/run/docker.sock	
+
+
+
+
+
+
+-------------------------docker integration for movie booking app-------------------------------------
+$ sudo docker network create movie-booking
+$ sudo docker network ls
+$ sudo docker run --name mysql_authenticate_service --network movie-booking -e MYSQL_ROOT_PASSWORD=1223 -e MYSQL_DATABASE=microtest -d mysql:8
+$ sudo docker container ls
+$ sudo docker exec -it mysql_authenticate_service bash
+$ mysql -v -p
+$ sudo docker run --network movie-booking --name authenticate_service -p 8400:8400 -d rick1113/authenticate-service
+
+	
+------------------------other util commands of linux and git-----------------------------------
+
+tar --extract --file /path/to/file.tgz
+find / -name "jenkins" #search folder
+
+
+…or create a new repository on the command line
+echo "# movie-booking" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git remote add origin https://github.com/chinmoyd1/movie-booking.git
+git push -u origin master
+…or push an existing repository from the command line
+git remote add origin https://github.com/chinmoyd1/movie-booking.git
+git push -u origin master
+
+
+git push origin HEAD:master
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
