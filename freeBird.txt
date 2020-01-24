@@ -37,7 +37,7 @@ cp -avr temp_work/fabric-samples/ home/fabric/
 
 docker stop $(docker ps -a -q)
 docker rm -f $(docker ps -a -q)
-docker prune volumes
+docker volume prune
 	
 	
 	
