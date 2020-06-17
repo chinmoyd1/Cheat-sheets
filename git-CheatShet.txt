@@ -1,0 +1,65 @@
+//Creating new Repo
+	$ git diff --stat --cached origin/master
+	$ git clone username@host:/path/to/repository
+
+	$ git add <filename>
+	$ git add *
+
+	$ git commit -m "Commit message"
+
+	$ git remote add origin <server>
+	$ git push origin master
+	// For updating repo
+	$ git pull
+
+//Pulling an existing branch
+	$ git clone username@host:/path/to/repository
+	$ git pull origin <Branch_name>
+	$ git checkout <Branch_name>
+	$ git branch
+	
+//Creating new branch and pushing it to remote repo
+	$ git checkout -b Branch1
+	$ git add <filename>
+	$ git commit -m "commit-message"
+	$ git push --set-upstream origin Branch1
+	
+//Merge to master branch
+	$ git checkout master
+	$ git pull origin master
+	$ git merge <branch>
+	$ git push origin master
+	
+//Rebaseing to master branch
+	$ git checkout master
+	$ git pull
+	$ git checkout <my_branch>
+	$ git rebase master
+	
+	$ git checkout master
+	$ git rebase <my_branch>
+	
+//Conflict issues
+	// to apply the new patch which is creating conflict
+	$ git rebase --continue
+	
+	//If you prefer to skip this patch, run 
+	$ git rebase --skip
+	
+//Deleteing a branch
+	$ git checkout master
+	$ git branch -d Branch1
+	$ git push origin -d Branch1
+	
+	
+//Reset Status	
+	$ git reset head
+	
+//Pushing to existing branch
+	$ git push origin branchName
+	
+//Delete remote branch
+git push origin --delete test
+
+//Delete local branch
+git branch -d test

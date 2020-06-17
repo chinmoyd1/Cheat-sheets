@@ -1,0 +1,737 @@
+//Chaincode: lets users change the state of ledger.
+
+	The client side SDK have two APIs to interact with the chaincode deployed on peers:
+		- invoke :  when we use invoke API to call a function in chaoncode the transaction gets recorded into the ledger.
+		- query: 	the transaction doesn't gets recorder into the ledger.
+	The payload is JSON in format:
+	{
+		Args: [func, param-1, param-2...]
+	}
+	
+	//Flow:
+		Step 1: When the client executes invoke API TxPrposal is created and it is sent to the endorsing peers, 
+		Step 2: if every thing is good with the Txproposal the endorsing peer sign the transaction and send it back to the client.
+		Step 3: Client then sends the signedTx to the orderer to include it in the block.
+		Step 4: Orderer then creates the block and sends it across the network
+		
+	- It must be installed on the endorsing peers and on application peers for invokation and query
+	
+	//Lifecycle of chaincode
+		1. Independent Installtion on the peer by org admins
+		2. Instantiate once on the channel by way of a transaction
+		3. Upgrade by way of transaction
+		4. Removed from each peer by orgAdmin independently
+		
+	1. Installed independently on the peers by org admins
+		- The org admin uses a client like peer binary to install chaincode on the peer
+			- peer chaincode install
+			- the client will read the chaincode from local filesytem
+			- and sends it to the running peer node
+			- the peer node on receving validates it and write it to its own local filesystem
+			- this doesn't lead to a tx on the ledger
+			
+	2. Instantiate once on the channel by way of a transaction
+		- Instantitation policy restricts which organization peer can act as a endorser for the instantiated tx
+			eg: OR('AcmeMSP.peer') //this indicates only Acme org peers can act as an endorser of this chaincode
+			- Instantiation policy is setup by "peer chaincode package" command
+			- The default policy is any organization can act as an endorser peer for instantiate tx
+		- one of the org admin executes the "peer chincode instantiate" on the client like peer binary
+		- which leads to the endorsing peer reading the chaincode from filesystem and initializing the chaincode and sending back the response to the client
+		- the client then sends the endorsment responses to the orderer to broadcast the tx
+		- the orderer packages the instantiation tx and delivers that tx to the block in the peers in the network
+		- peer in the network then commit the instatiation tx to their local ledger
+		
+		- chaincode instances are launched on the peer in isolated docker conatiners
+		- the first time invoke or a query operation is executed aginst the chaincode on a peer it leads to the creation of docker image for the chaincode container
+		- then the peer creates the chaincode container instances
+		- this chaincode container instance carrys out the initialization and registers with the peer node.
+		
+	3. Upgrade chaincode by way of transaction	
+		- To upgrade a chaincode a new version of the chaincode package is created which needs to be installed on the endorsers peer
+		- Then an upgrade tx is created to make the chaincode version the current version
+		- Each of the org admins must upgrade the chaincode to its latest version manually on the peer in their organization
+	
+	4. Removed from each peer by orgAdmin independently
+		- Organization may independently make a decission to remove the chaincode from their peers
+		- Removal of the chaincode from peer doesn't affect the network/ledger in any way
+		- Its a manual process as fabric doesnt provide any command for this operation
+		
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//For the shim interface
+	mkdir -p $GOPATH/src/github.com/hyperledger
+	cd $GOPATH/src/github.com/hyperledger
+	git clone -b release-1.2 https://github.com/hyperledger/fabric.git		
+	
+	go get github.com/golang/protobuf/proto
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Interface
+	The chaincode "stub interface" instance exposes function for interacting with fabric runtime 
+	-> the client runs instantiate or invoke on peer this leads to the fabric runtime creating an instance of the chaincode stub interface
+	-> then deligates the call to chaincode (init and invoke) with stub interface
+	-> the init and invoke function receives stub interface as argument and can excute function on the stub instance to interact with the fabric runtime
+	
+	** Functions available on the stub interface
+		- Transaction: 		Provide information about the current transaction
+		- Arguments: 		Provides access to the arguments or parameters sent by client API
+		- State Data: 		For managing the state data for the chaincode
+		- Private Data: 	For manging the private data
+		- Queries: 			Execute Rich query against the state data
+		- History: 			Provides access to the history of the asset managed in the chaincode
+		- Events: 			To generate chaincode events and the application maysubscribe to these events using client APIs
+		- Invoke Chaincode: Chaincode may invoke other chaincode
+		
+		->	Transaction:
+			 transaction proposal information may be extracted by executing the function 
+				GetSignedProposal() (*pb.SignedProposal, error)
+				- The information recevied by this function is in 2 parts and in probuf format
+					- SignedProposal
+						- ProposalBytes
+							- Header
+							- Payload
+						- Signature
+				
+				- Utilities to extract data from probug Tx format
+					- GetTxId() string
+					- GetTxTimestamp() (*timestamp.Timestamp, error)
+					- GetChannelID() string
+					- GetCreator() ([]byte, error)
+					- GetTransient() (map[string][]byte, error) : Gets the prvate data form the Tx Proposal
+					- GetBinding() ([]byte, error) : Links transient data to proposal for preventing Replay Attacks
+					- GetDecoration() map[string][]byte : Data appended by Handlers on Peers
+		-------------------------------------------code-----------------------------------------------------------		
+			import(
+				"fmt"
+				"time"
+				
+				"github.com/hyperledger/fabric/core/chaincode/shim"
+				"github.com/hyperledger/fabric/protos/peer"
+			)
+			
+			func (token *TokenChaincode) Invoke(stub shim.ChaincodeStubInterface) peer.Response {
+				fmt.Println("Invoke executed")
+				
+				fmt.Printf("GetTxID() => %s\n", stub.GetTxID())
+				fmt.Println("GetChannelId() =>", stub.GetChannelID())
+				
+				TxTimestamp, _ := stub.GetTxTimestamp()
+				timeStr := time.Unix(TxTimestamp.GetSeconds(),0)
+				fmt.Printf("GetTxTimestamp => %s\n", timeStr)
+			}							
+		----------------------------------------------------------------------------------------------------------	
+
+		-> Arguments:
+			GetArgs() [][]byte
+			GetStringArgs() []string
+			GetFunctionAndParameters() (string, []string)
+			GetArgsSlice() ([]byte, error)
+		
+			- StateData:
+				by default State Data and TxLogs are managed in the levelDB, but peer can be configured to use couchDB for stste data
+				benefit of using couchDB is that "Supports Rich queries against state data"
+				- Each chaincode instances manage its own State Data, but all Tx are witten to the common Tx logs irrespective of the chaincode
+				- At times there will be need for one chaincode to get access to the state data of another chaincode, 
+				  the direct access is not allowed but chaincode A can expose Tx that can be invoked by chaincode B.
+				- That way it can not only access but change the state data
+				
+				- State Management Funcs
+					- GetState(key string) ([]byte, error) : GET the state data
+						Returns the Commited data NOT the writeset
+						
+					- PutState(key string, value []byte) error : SET the state data
+						Data wriiten to the writeSet not to the ledger, data written to the ledger only as part of Commit
+						
+					- DelState(key string) error : DELETE the state data
+						Removal takes action as part of the Commit
+		
+		----------------------------------------------------------------------------------------------------------
+			package main
+			
+			import(
+				"fmt"
+				"strconv"
+				"github.com/hyperledger/fabric/core/chaincode/shim"
+				"github.com/hyperledger/fabric/protos/peer"
+			)
+			
+			type TokenChaincode struct {}
+			
+			func (token *TokenChaincode) Init(stub shim.ChaincodeStubInterface) peer.Response {
+				fmt.Println("Init executed")
+				stub.PutState("MyToken", []byte("2000"))
+				
+				return shim.Success([]byte("true"))
+			}
+			
+			func (token *TokenChaincode) Invoke(stub shim.ChaincodeStubInterface) peer.Response {
+				funcName, _ := stub.GetFunctionAndParameters()
+				fmt.Println("Function=", funcName)
+				
+				if (funcName == "set"){
+					return SetToken(stub)
+				} else if (funcName == "get"){
+					return GetToken(stub)
+				} else if (funcName == "delete"){
+					return DeleteToken(stub)
+				} 
+				
+				return shim.Error(("Bad Function Name = "+funcName+"!!!"))
+			}
+			
+			func SetToken(stub shim.ChaincodeStubInterface) peer.Response {
+				value, err := stub.GetState("MyToken")
+				
+				if(err != nil){
+					return shim.Error(err.Error("My Token"))
+				}
+				
+				intValue, err := strconv.Atoi(string(value))
+				
+				if(err != nil) {
+					return shim.Success([]byte("false"))
+				}
+				
+				intValue += 10
+				
+				stub.PutState("MyToken", []byte(strconv.Itoa(intValue)))
+				
+				return shim.Success([]byte("true"))
+			}
+			
+			func GetToken(stub shim.ChaincodeStubInterface) peer.Response {
+				var myToken string
+				
+				var value []byte
+				var err error
+				
+				if value, err = stub.GetState("MyToken"); err != nil {
+					fmt.Println("Get Failed!!!", err.Error())
+					
+					return shim.Error(("Get Failed!! "+err.Error()+"!!!"))
+				}
+				
+				if (value == nil) {
+					myToken = "-1"
+				} else {
+					myToken = "MyToken="+string(value)
+				}
+				
+				return shim.Success([]byte(myToken))
+			}
+			
+			func DeleteToken(stub shim.ChaincodeStubInterface) peer.Response {
+				value, _ := stub.GetState("MyToken")
+				if value == nil {
+					return shim.Success([]byte("false"))
+				}
+				if err := stub.DelState("MyToken"); err != nil {
+					fmt.Println("Delete Failed!!! ", err.Error())
+					return shim.Error(("Delete Failed!! "+err.Error+"!!!"))
+				}
+				
+				return shim.Success([]byte("true"))
+			}
+		----------------------------------------------------------------------------------------------------------	
+
+		-> Invoke Chaincode:
+			**Rules:
+				- Both chaincode must be onthe same peer
+				- Tx executes in the same Transaction context
+				- State changes on the caller and called take effect only if they share common channel
+				- If on differernt channel no effect will be there on Tx log for called
+			- Function:
+				InvokeChaincode(chaincodeName string, args [][]byte, channel string) peer.Response
+				 // if channel name is blank then the caller channel name is used
+		
+		----------------------------------------------------------------------------------------------------------	
+			response := stub.InvokeChaincode(TargetCahincode, args, channel)
+			return response
+		----------------------------------------------------------------------------------------------------------	
+		
+		-> Channel Events:
+			- Peer emits events
+			- Application may suscribe to event of interest
+			- Subscrition is on channel level not in peer level
+			- Subscriber can also provide filter criteria
+			
+			*** There are 3 types of events
+				- Block : New Block added tothe ledger
+				- Transaction: Specified Tx recieved in the block
+				- Chaincode: Specified event for chaincode receieved
+		
+			Chaincode Events:
+				- Subscriber uses client SDK to subscrive to the event
+				- When an application or client executes the tx against the chaincode it leads to the generation of the event which sent to subscribers
+				- Event is only generated when the peer adds the Tx to the ledger
+				- Doesn't matter if the Tx is valid or Invalid event will be received by the subscriber
+				
+				- Function: 
+					SetEvent(name string, payload []byte) error
+		
+		----------------------------------------------------------------------------------------------------------	
+			stub.PutState("MyToken", []byte(strconv.Itoa(intValue)))
+			
+			eventPayload := "{\"value\": "+ strconv.Itoa(intValue)+"}"
+			stub.SetEvent("TokenValueChaged", []byte(eventPayload))
+			
+			return shim.Succes([]byte("true"))
+		----------------------------------------------------------------------------------------------------------	
+______________________________________________________________________________________________________________________________________________________________________________________________		
+	** All chaincode must impliment the functions on the interface, there are 2 function on the interface
+		|
+		|	#Executed as part of Instantiation and Upgrade
+		|___Init  		:  Initialization logic
+		|
+		|	#Executed as part of Invoke and Query
+		|___Invoke  	:  Business Logic
+		
+	** In addition to the init and invoke function there has to be a main function which registers the instance with the Runtime	
+		
+	** Function for chaincode registration is main and the registration is carried out by invocation of
+			err := shim.Start(new(TokenChaincode))
+			// And it takes an instance of type struct that represents the chaincode instance 
+		
+		Init:
+			func (token *TokenChaincode) Init(stub shim.ChaincodeStubInterface) peer.Response
+			
+		Invoke:
+			func (token *TokenChaincode) Invoke(stub shim.ChaincodeStubInterface) peer.Response
+		
+	** The Init and Invoke function must return a response
+		// Utility function for response
+			
+			return shim.Error(err.Error())
+			// It accepts String as message
+			
+			return shim.Success([]byte(""))
+			// As Sucess only accepts Bytes array/slice
+		
+		** Custom responses can also be created using peer.Response
+		return peer.Response{Status:401, Message: "Unauthorized", Payload: ""}
+		
+
+//Logging from chaincode
+	There are two types of logs that can be generated from chaincode
+		|
+		|__Custom Logs by developer
+		|
+		|__Shim itself writes out the logs
+		
+		** Levels of logging
+			- INFO 		- WARNINIG
+			- DEBUG 	- ERROR
+			- NOTICE 	- CRITICAL
+		
+		These can be set either by core.yaml or environment variables
+			logging:
+				level:	CORE_CHAINCODE_LOGGING_LEVEL
+				shim:	CORE_CHAINCODE_LOGGING_SHIM
+		
+		//Chaincode logger struct
+			func NewLogger(name string) *ChaincodeLogger
+			
+			DEBUG:
+				func(c *ChaincodeLogger) Debug(args...interface{})
+				func(c *ChaincodeLogger) Debugf(format string, args ...interface{})
+				
+				eg: 
+					const ChaincodeName = "tokenv2"
+					var logger = shim.NewLogger(ChaincodeName)
+					
+					logger.Debug("")
+					logger.Info("")
+					logger.Noticef("formatted string value=%s", "Invoke Executed")
+					logger.Warning("Invoke executed", "[any number of parameters of differrent types]", 123)
+		
+		
+		
+		
+		
+		
+		
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Unit Testing Chaincode
+
+	??_test.go
+	$ go test -v/-cover <>.go	
+		
+		
+	import( 
+		"testing"	
+	)	
+		
+	func TestCalculate(t *testing.T) {
+		result := Calculate(2)
+		
+		if result != 4 {
+			t.Error("Expected 2 + 2 equals 4")
+		}
+		
+		t.Logf("This is a %s that will only appear if there is an error or -v is used", "message")
+	}	
+		
+//MockStub
+//Simulates the Fabric Runtime Chaincode Stub
+
+//Cretaing an Instance
+shim.NewMockStub(name string, cc Chaincode)	
+
+**Exposes 2 types of function
+		MockInit(uuid string, args [][]byte) pb.Response
+		
+		MockInvoke(uuid string, args [][]byte) pb.Response
+		
+		---------------------------------------------------------------------------------------
+		//calc.go
+		Init
+			Initializes token = 100
+			
+		Invoke
+			arg[0]="add","subtract",...
+			arg[1]="number"
+		---------------------------------------------------------------------------------------
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Client creating the propose message
+			-Propose Message
+				- Client ID
+				- Chaincode ID
+				- Transaction Payload
+					- Deploy			Invoke
+						= source			= operation
+						= metadata			= Metadata
+						= policies
+						
+				- Client Signature
+
+** Endorsement Process
+		1. Checking the validity of client signature
+		2. If signature is right then endorsing peer simulates the Execution of Tx which leads to the genration of read/write set
+		3. The endorsing peer runs the endorsment logic and signs the proposaldepending upon if the Tx is successful or it has been rejected
+		4. The end result of the endorsement process is "creation of the Tx proposal response message" which includes
+			- Endorsers ID
+			- Read Set	: Set of key state data which is used for simulated chaincode execution
+			- Write Set	: It has information on the state data changes after simulated execution of chaincode
+			- Private key Signature
+	
+	** After client's receival of Tx Proposal response from endorsement peers it packages it and sends it to orderer
+	** Orderer packs it into a block and sends it to different peers
+	** Peers on receving the block validates all the Tx contained in the block, 
+		- it checks signature of the client and endorsers
+		- checks the endorsement policy is met
+		- read and write sets of all the transaction proposal response is checked for equality
+		- if the Tx is invalid it writes to ledger with status ENDORSEMENT_POLICY_FAILURE
+		- if valid then status=VALID added to the ledger fot Tx
+		
+	//Endorsement Policy
+		- for any organization 
+		OR('TrustAuthority1.peer', 'TrustAuthority2.peer')
+		- for single organization
+		OR('TrustAuthority1.peer')
+		- Both trust authority must endorsement
+		AND('TrustAuthority1.peer', 'TrustAuthority2.peer')
+		
+		AND('TrustAuthority1.peer', OR('TrustAuthority2.peer', 'TrustAuthority3.peer'))
+		
+		OUTOF(1,'TrustAuthority1.peer', 'TrustAuthority2.peer')
+		
+	** Endorsement Policy can be defined at 2 levels
+		- Chaincode : Associated with chaincode instantiation and upgrade
+		- Key : Dynamically controlled by way of shim API
+				- By default all keys are manged by Chaincode Endorsement Policy
+	
+	** Endorsement Policies are optional
+		- By default any 1 peer from default MSP/Organization can endorse
+		
+		
+	$ peer chaincode invoke --peerAdresses EP-1	--peerAdresses EP-2 --peerAdresses EP-3
+		
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Private Data Collection
+ - The client sends the data in transient field not in payload field
+ - Endorsers checks the private data collection defination and based on the attributes of PDC defination carries out the endorsement process
+ - If endorsement policies are met the Endorsers sends the endorsement response back to the client in the Tx it doesn't includes the private data but rather hash of the Private Data
+ - Endorsers stores and sends private data to the authorized peer directly, not all peers receives the Tx they may use gossip protocol to get
+ - Peers get private data from other peers with gossip and after validating it stores the private data locally 
+ - After received Peer validates the Tx and checks whther it is a member of the authorized organization which have permission to read PD
+ - But if not a memeber of authorized organization then it commits hash to the ledgger
+ - If an authorized member to view PD it checks if Tx is available in transient DB, if not available it uses GOSSIP protocol to get data from other peers and endorsers
+ - Once received it calculates the hash to the hash received n tyhe Tx
+ - Then it deletes it from the Transient Store and commits it to the ledger with hash
+ 
+ ** PDC Policies only defines the read policies for PD the write action can be done by any member on the channel
+ 
+ //PDC defination
+	Is defined as a JSON which has these attributes
+	- name : Identity of the PDC
+	- policy : Authorized to read the data from PDC Eg. OR('OrgA.member')
+	- requiredPeerCount : minimum nuber of peers, Endorsers must sends the private data to 'authorized peer' 
+	- maxPeerCount: maximum nuber of peers, Endorsers must sends the private data to 'authorized peer' 
+	- blockToLive: 
+	- memberOnlyRead: boolean attribute that controls the read access to the private data in invoke
+		-> client sends a Tx request for PD to endorser where for a chaincode which allows only "AcmeMSP.member" to access the private data
+		-> before the endorser executes the chaincode code it chaecks the call coming from if the call is coming from a member which is part of PDC defination
+		-> if the call is coming from "AcmeMSP.member" it will be executed but if the call is from any other Org
+		-> then it will check if "memberOnlyRead" is set to true for PDC if true return error if false permitted
+		-> bydefault its "true"
+		
+		
+ - Developers of fabric suggest to purge private data periodically
+	Reason:
+			- security of sensetive data or regulatory requirement to only manage data on authorized data store
+ - Automatic purging is carried out after specified number of blocks is created		
+	 //set blockToLive = 0 to retain all
+ - To control purging of transient data you have to configure core.yaml 
+	peer.gossip.pvtData.transientstoreMaxBlockRetention
+	
+	
+	
+	//pcollection.json
+	[
+		{
+			"name": "AcmeBudgetOpen",
+			"policy": "OR('AcmeMSP.member', 'Budget.member')"
+			"requiredPeerCount": 1,
+			"maxPeerCount": 3,
+			"blockToLive": 0
+		},
+		{
+			"name": "AcmePrivate",
+			"policy": "OR('AcmeMSP.member')"
+			"requiredPeerCount": 1,
+			"maxPeerCount": 3,
+			"blockToLive": 0
+		}
+	]
+	
+	
+	- PD Management Funcs
+		- GetPrivateData(collection, key string) ([]byte, error) : GET the private data
+						
+		- PutPrivateData(collection, key string, value []byte) error : SET the PRIVATE data
+			Data wriiten to the writeSet not to the ledger, data written to the ledger only as part of Commit
+						
+		- DelPrivateData(collection, key string) error : DELETE the state data
+			Removal takes action as part of the Commit
+						
+	
+		------------------------------------------------------------------------------------------------------------	
+		func main() {
+			fmt.Printf("Started Chaincode. priv\n")
+			err := shim.Start(new(PrivChaincode))
+			if err != nil {
+				fmt.Printf("Error starting chaincode: %s", err)
+			}
+		}
+		
+		func (privCode *PrivChaincode) Invoke(stub shim.ChaincodeStubInterface) peer.Response {
+			funcName, params := stub.GetFunctionAndParameter()
+			fmt.Printf("funcName=%s Params=%s \n", funcName, params)
+			
+			if funcName == "Set" {
+				return privCode.Set(stub, params)
+			} else if funcName == "Get" {
+				return privCode.Get(stub)
+			} else if funcName == "Del" {
+				return privCode.Del(stub)
+			}
+		}
+		
+		func (privCode *PrivChaincode) Set(stub shim.ChaincodeStubInterface, params []string) peer.Response {
+			CollectionName := params[0]
+			TokenValue := params[1]
+			
+			err := syub.PutPrivateData(CollectionName, "token", []byte(TokenValue))
+			if err != nil {
+				return shim.Error("Error=" + err.Error())
+			}
+			
+			return shim.Success([]byte("true"))
+		}
+		
+		func (privCode *PrivChaincode) Get(stub shim.ChaincodeStubInterface, params []string) peer.Response {
+			resultString := "{}"
+			
+			dataOpen, err1 := stub.GetPrivateData("AcmeBudgetOpen", "token")
+			if err1 != nil {
+				return shim.Error("Error1=" + err1.Error())
+			}
+			
+			dataSecret, err2 := stub.GetPrivateData("AcmePrivate", "token")
+			
+			accessError := "N.A."
+			if err2 != nil {
+				fmt.Println("Error2=" + err2.Error())
+				accessError = err2.Error()
+				dataSecret = []byte("**** Not Allowed ***")
+			}
+			
+			resultString = "{open:\"" + string(dataopen) + "\", secret:\"" + string(dataSecret) + "\" , error:\"" + accessError + "\"}"
+			
+			return shim.Success([]byte(resultString))
+		}
+		
+		func (privCode *PrivChaincode) Del(stub shim.ChaincodeStubInterface, params []string) peer.Response {
+			CollectionName := params[0]
+			
+			err := stub.DelPrivateData(CollectionName, "token")
+			if err != nil {
+				return shim.Error("Error=" + err.Error())
+			}
+			return shim.Success([]byte("true"))
+		}
+		------------------------------------------------------------------------------------------------------------	
+
+	
+	$ peer chaincode instantiate --collections-config pcollection.json
+	$ peer chaincode upgrade --collections-config pcollection.json
+	
+	
+	
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Fabric-SDK
+
+//Module: fabric-network for 
+	- managing wallets and identities
+	- and invoke/query chaincode
+	classes:
+		Gateway: Connecting Point for accessing the network
+		Network: Representing set of peer belonging to a network(channel)
+		
+		Contract: API for chaincode interactions
+		Transaction: API for chaincode interactions 
+		
+		X509WalletMixin interface:
+			InMemoryWallet:
+			FileSystemWallet:
+			CouchDBWallet:
+	
+	** SDK flow
+	- The application/client creates an instance of the "gateway" class using new operator
+	- The application than initializes the gateway instance using the "wallet"(crypto for enroll user) and "connection profile"(yaml)
+	- After initialization the application creates an instance of the "network" class by using a function on the "gateway" class 
+	- Then it creates an instance of the "contract" class by invoking a function on the "network" class
+	- Functions exposed by "network" class are then used for Invoke and Query Functions
+	
+	** Wallets
+	- Wallet contains one or more user identity contexts and each of the context contains 
+		= certificates
+		= public key
+		= private key
+	- Class "X509WalletMixin" exposes an API for creating Identities in X509 format that can be managed in a wallet
+	- The 'Wallet' Interface exposes the API that all wallet implementation must support
+		- There are three wallet implementaion provided out of the box
+			= InMemoryWallet
+				+ To create an instance of the 'InMemoryWallet' there is need for implementing 'Custom Identities Store'
+				+ Which is accessed by the Application to create an Instance of the 'InMemoryWallet' class				
+			= FileSystemWallet
+				+ Profiles manged on user's filesystem to create an Instance it also has to provide location of wallet folder in constructor
+			= CouchDBWallet
+				+ CouchDB URL needs to be provided to constructor
+				
+			-- Funtions Exposed by Wallet Interafce
+				= <async>import(label, identity) 	//import an identity into wallet
+				= <async>export(label) 				//Export out an identity from wallet
+			    = <async>list()						//List the identities
+				= <async>exists(label)				//Checks if the identity with label exists
+				= <async>delete(label)				//Removes identity from wallet
+			
+			
+	** Gateway class
+	    - Instace of the gateway class is used to create a network class instance
+		- Before Gateway class can be used to interact with the network it needs to be initialized using connect function on it
+			= <async>connect(connection-profile, connection-options)
+				+ connection-profile object of yaml
+					+ yaml contains
+						> organization
+						> orderer
+						> peers
+						> channel
+				+ connection-options
+					+ wallet instance
+					+ identity present in wallet
+			= <async>getNetwork(channel-id) : returns opject representing the network
+			= <async>getClient() : underlying object for provideing access to network
+			= <async>disconnect() : disconnects the instance of the gateway from network
+	
+	** Network class
+		- Instance creted with function getNetwork()
+			= getNetwork()
+			= getContract(chaincode-id)
+			= getChannel()
+	
+	** Contract class
+		= <async>submitTransaction(name[,args]) : invoke
+		= <async>evaluateTransaction(name[,args]) : query
+	
+		
+	**  Transaction
+		= <async>submit([args]): Submit a transaction
+		= <async>evaluate([args]) : Query The Chaincode
+		= <async>setTransient(transientMap) : To send Privet data
+		
+		= getTransactionId()
+		= getName() : returns chaincide fully qualified name
+		= getNetwork() : returns network instance associated with transaction object
+			
+			
+		
+	** Flow
+		Apps --> Gateway ---getNetwork()---> Network ---getContract()---> Contract ---createTransaction()---> Transaction
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+			
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	

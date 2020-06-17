@@ -1,0 +1,90 @@
+// To generate crypto-config.yaml msp, certs and signatures for dev environment
+	$ cryptogen generate --config=./crypto-config.yaml
+	
+// Generate GenesisBlock(Orderer)
+	$ configtxgen -profile TwoOrgsOrdererGenesis -channelID syschannel -outputBlock channel-artifacts/genesis.block
+
+// Generate Channel
+	$ configtxgen -profile TwoOrgsChannel -outputCreateChannelTx ./channel-artifacts/mychannel.tx -channelID mychannel
+
+// Anchorpeer Update
+	$ configtxgen -profile TwoOrgsChannel -outputAnchorPeersUpdate ./channel-artifacts/Org1MSPanchors.tx -channelID mychannel -asOrg Org1MSP
+	$ configtxgen -profile TwoOrgsChannel -outputAnchorPeersUpdate ./channel-artifacts/Org2MSPanchors.tx -channelID mychannel -asOrg Org2MSP
+	
+// Run all the conatainers
+	$ docker-compose up
+	
+//Peers Join Channel	
+		//Organization Admins sign the <channel_name>.tx (based on policy)			
+			$  sudo docker exec -it cli-peer0.org2 bash 
+				$	cd /opt/gopath/src/github.com/hyperledger/fabric/peer/orderer/
+				$   mkdir adminSigned
+				$   cp mychannel.tx  adminSigned/
+				$   cd adminSigned
+				$   peer channel signconfigtx -f mychannel.tx --tls --cafile=/etc/hyperledger/orderers/msp/tlscacerts/tlsca.example.com-cert.pem
+				   
+			$  docker cp cli-peer0.org1:/opt/gopath/src/github.com/hyperledger/fabric/peer/orderer/adminSigned/mychannel.tx .
+			$  docker cp mychannel.tx cli-peer0.org2:/opt/gopath/src/github.com/hyperledger/fabric/peer/orderer/adminSigned/mychannel.tx
+			
+			$  sudo docker exec -it cli-peer0.org1 bash 
+				$	cd /opt/gopath/src/github.com/hyperledger/fabric/peer/orderer/adminSigned
+				$   peer channel signconfigtx -f mychannel.tx --tls --cafile=/etc/hyperledger/orderers/msp/tlscacerts/tlsca.example.com-cert.pem
+				
+
+		//Channel Creation: One of the Org Admin submits the Channel Create Tx
+				$ peer channel create -o orderer.example.com:7050 -c mychannel -f mychannel.tx --tls --cafile=/etc/hyperledger/orderers/msp/tlscacerts/tlsca.example.com-cert.pem
+					# on sucessfule creation of the chaincode the creating peer recivers the config block for the channel mychannel.block
+		//Peer joins the Application Channel
+				$ peer channel join -o orderer.example.com:7050 -b mychannel.block --tls --cafile=/etc/hyperledger/orderers/msp/tlscacerts/tlsca.example.com-cert.pem
+				
+//To make other peers join
+	// Fetch the channel config
+		$ docker exec -it cli-peer0.org2 bash
+			$ peer channel fetch 0 -o orderer.example.com:7050 -c mychannel --tls --cafile=/etc/hyperledger/orderers/msp/tlscacerts/tlsca.example.com-cert.pem
+			//Organization Admin execute Join channel for peer
+			$ peer channel join -o orderer.example.com:7050 -b mychannel_0.block --tls --cafile=/etc/hyperledger/orderers/msp/tlscacerts/tlsca.example.com-cert.pem
+
+		$ docker exec -it cli-peer1.org1 bash
+			$ peer channel fetch 0 -o orderer.example.com:7050 -c mychannel --tls --cafile=/etc/hyperledger/orderers/msp/tlscacerts/tlsca.example.com-cert.pem
+			//Organization Admin execute Join channel for peer
+			$ peer channel join -o orderer.example.com:7050 -b mychannel_0.block --tls --cafile=/etc/hyperledger/orderers/msp/tlscacerts/tlsca.example.com-cert.pem
+		
+		$ docker exec -it cli-peer1.org2 bash
+			$ peer channel fetch 0 -o orderer.example.com:7050 -c mychannel --tls --cafile=/etc/hyperledger/orderers/msp/tlscacerts/tlsca.example.com-cert.pem
+			//Organization Admin execute Join channel for peer
+			$ peer channel join -o orderer.example.com:7050 -b mychannel_0.block --tls --cafile=/etc/hyperledger/orderers/msp/tlscacerts/tlsca.example.com-cert.pem
+
+
+
+
+	
+// Peer to create mychannel.block file which contains config of the channel
+	$ docker exec cli-peer0.org1 bash -c 'peer channel create -c mychannel -f ./channels/mychannel.tx -o orderer.example.com:7050 --tls --cafile=/etc/hyperledger/orderers/msp/tlscacerts/tlsca.example.com-cert.pem'
+	// to bash into container to check for file creation (mychannel.block)
+	$ sudo docker exec -it cli-peer0.org1 bash
+	
+	//To join channel
+	$ sudo docker exec cli-peer0.org1 bash -c 'peer channel join -b mychannel.block'
+	$ sudo docker exec cli-peer1.org1 bash -c 'peer channel join -b mychannel.block'
+	$ sudo docker exec cli-peer0.org2 bash -c 'peer channel join -b mychannel.block' 
+	$ sudo docker exec cli-peer1.org2 bash -c 'peer channel join -b mychannel.block'
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Utils
+	// To decode the genesis block to get different resources and their policies
+		$ configtxlator proto_decode --type common.Block --input channel-artifacts/genesis.block --output genesis.block.json

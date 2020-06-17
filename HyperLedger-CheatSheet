@@ -1,3 +1,10 @@
+//Install go
+
+
+
+
+
+
 mkdir hello
 cd hello/
 vi hello.go
@@ -9,6 +16,17 @@ go install .
 //make bin public
 export PATH="$PATH:/home/tomahawk/tools/jdk1.8.0_92/bin"
 source .profile //universal profile ~/.profile
+
+_________________________________________________________________________________________________________________________________________________________
+MSP(Membership Service Provider): 
+	- Is a set of cryptographic material that defines a organization itself.
+	- Every peer, orderer needs certificate and these certificate shares common properties (these common properties between certificate defines that this peer/orderer is part of that org)
+	- Only peer of the same organization or similar MSP can gossip with each other.
+	
+	To setup an MSP in the blockchain network, its configuration needs to be specified in below places
+		- locally in each peer in organisation
+		- orderer (peer enabling, signing)
+		- on channels to enable peer, orderer, client validation and member validations.
 _________________________________________________________________________________________________________________________________________________________
 BINARIES...
 
@@ -78,11 +96,10 @@ ORDERER
 		TLS:
 			ClientAuthRequired: true|false
 								#false, accepts connection from any peer.
-			#if true than have to set ClentRootCAs:
+			#if true than have to set clientRootCAs:
 				ClientRootCAs: List of Client CA certs that can be trusted.
 				
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------	
-	#orderer.yaml
+-------------------------------------------------------#orderer.yaml-----------------------------------------------------------------------------------------------------------------------------	
 	#this values can ve overriden by environment variables at runtime
 	
 	General: 							#ORDERER_GENERAL_...
@@ -208,7 +225,7 @@ PEER
 				
 				                   /- install: install commands allows admin for the copying of the chaincode to the peer 	 $ chaincode install -n chaincode1 -v 1.0 -l golang -p
 								  /	  # the chaincode must be available under a folder src of a parent folder specified in environment variable export GOPATH=/gopath/chaincode 	
-				                 /- isntantiate: to instantiate and launch a peer	$ chaincode instantiate -n <chaincode_name> -v <version> -c <constructor_arguments> '{"Args":["init","a","100","b","200"]}' -C <channel_name>
+				                 /- isntantiate: to instantiate and launch a peer	$ chaincode instantiate -n <chaincode_name> -v <version> -c <constructor_arguments> '{"Args":["init","a","100","b","200"]}' -C <channel_name> -P <endorsement policy>
 						   	    /   # c-> JSON constructor, C-> channel on which the chaincode is to be instantiated, 
 						       /    # additional flags -P which declares the endorsment policy for the chaincode(default: any member of the organisation who is part of the channel) with
 							  /	    # -E name of the endorsement system chaincode (default is escc)
@@ -250,13 +267,275 @@ PEER
 	//Logging level may be controlled on per <module> basis
 		gossip, grpc, ledger, msp, policies, peer
 	//levels: DEBUG, WARNING, ERROR, INFO, NOTICE, CRITICAL
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------				
-//core.yaml
 	
 	
+//Script to automate peer setup
+	1. Create channel | Fetch channel genesis
+	2. Start the peer node
+	3. Join the peer node with channel
+	4. List the channels peer has joined
 	
+	E.g. peer/simple-two-rg/init.sh
+	
+//core YAML file is divided into six sections:
+	1. logging: set up logging properties.
+	2. peer: General properties.
+	3. ledger: Blockchain | State.
+	4. metrics: Metrics setup.
+	5. chaincode: Chaincode support.
+	6. vm: Virtual Machine | Docker.
+	
+//propertiez in the yaml file can be overriden by environment variables using CORE_SECTION-NAME_PROPERTY
+------------------------------------------------core.yaml------------------------------------------------------------------------------------------------------------------------------------				
+
+logging:
+	level: info
+	
+	cauthdsl: warning
+	gossip: warning
+	grpc: error
+	ledger: info
+	msp: warning
+	policies: warning
+	peer: 
+		gossip: warning
+
+#for setting TLS
+peer:
+	id: devpeer
+	networkId: dev
+	fileSystemPath: 	#contains the path where Tx Log should be stored
+	# for naming purpose only
+	tls:
+	
+		enabled: true
+		key: # path to the private key server.key
+		cert: # path to the TLS certificate server.crt
+		rootcert: # Trusted root certificate ca.crt
+		
+		# in order to set the mutual ssl or client authentication
+		clientAuthRequired: true
+		clientRootCas:
+			files: # list of client CA certs that can be trusted
+	
+	BCCSP:
+	
+	
+	gossip:
+		aliveTimeInterval: #time in second between heartbeat messages.
+		aliveExpirationTimeout: #maximum time to wait for receiving heart beat before disconnecting.
+		useLeaderElection: true 	#or orgLeader: true
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+The peer binary has the GRPC server and there are GRPC services which are exposed to the client, these sercices are exposed on the listen address, it also supports TLS.
+	
+	//Testing TLS 
+	step 1: Enable TLS and set certificates
+	step 2: Setup VM "hostname" & "etc/hosts" # as vm peers dont have ip (we are running all on same vm)
+	step 3: test using $ peer channel list
+
+**notes: Hostname of the TLS certificate must match with VM hostname, hostname must have a ip address set up.
+
+//Gossip
+**for gossip data desemination it has to know the address of atleast one peer, this is achived by bootstrap parameter.
+  bootstrap parameter is list of bootstrap peers in the network(these are known peer), some of the peer are marked as bootstrap
+  when a new pair launches it uses the bootsrap peer to connect to the network and receives the other peers later.
+	
+	gossip:
+		aliveTimeInterval: #time in second between heartbeat messages.
+		aliveExpirationTimeout: #maximum time to wait for receiving heart beat before disconnecting.
+
+//Leader peer
+**Leader peer can be elelected STATICALLY or Dynamically.
+	-	Static--> orgLeader: true
+	-	Dynamic--> useLeaderElection: true
+	
+	gossip:
+		useLeaderElection: true 	#or orgLeader: true
+
+//Events in Peer
+	- Peers emits events on receving Blocks
+	- Clients subscribe to these events
+	- Events subscription is on channel basis
+	
+//Chaincode emits application events
+	- This is developed by developers using SDK/API 
+	
+//Client Subscription modes
+	Filtered: 	Block information summary | Transaction status
+				Less restrictive in terms of access
+				Chaincode events name only
+			  
+	Un-Filtere: All of transaction information
+				Stricter access restrictions
+				Chaincode event payload
+
+//Ledger
+	peer:
+		fileSystemPath: 	#contains the path where Tx Log should be stored
+	
+	ledger:
+		stateDatabse:  CouchDB  # or goleveldb
+		couchDBConfig: 
+			couchDBAddress:
+			username:
+			password:
+	
+//CouchDB
+	Step 1: Install CouchDB
+	Step 2: Setup the parameters in core & initialize peer
+	Step 3: Verify peer is using CouchDB
+	
+//Chaincode
+	UNDER THE HOOD OF INSTALL COMMAND
+	1. When admin executes the "install" command on the peer. 
+	2. Peer launches the "build container". The Build container has all the tools for building the source code for the chaincode.
+	3. Peer copies the cahincode source to the "Build container" and initiates the process 
+	4. This is where the source code is compiled and packaged inside the "Build Container".
+	5. Peer reads the package and writes it to the local file system.
+	"Builder container"--> chaincode:
+								builder: 	#docker image used for building the chaincode.
+	
+	UNDER THE HOOD OF INSTANTIATE COMMAND
+	1. When the admin executes the "instantiate" command the peer reads the package from local file-system.
+	2. Select the "base image" based on the language of chain-code used.
+	3. Then it copies the chaincode to "Base image" creates image for the chaincode .
+	4. Then it launches the container of the chain-code image it has created.
+	5. At that point interaction between the chaincodecontainer and peer occurs over GRPC interface (Eg. invoke and query the chaincode).
+	6. The base image used for Base Image of the chaincode is configured in core.yaml
+		--> chaincode:
+					golanng:
+						runtime:
+					
+					node:
+						reuntime:
+
+//To launch chaincode in "Dev Mode"
+	$ peer node start --peer-chaincodedev=true
+	
+	Step 1: Build the GO chaincode
+		$ go install -tags nopkcs11 chaincode_example02
+	
+	Step 2: Launch the chaincode
+		$ export CORE_CHAINCODE_ID_NAME=goccdev:1.0
+		$ export CORE_CHAINCODE_LOGGING_LEVEL=DEBUG
+		$ export CORE_PEER_ADDRESS=localhost:7052
+		
+		$ $GOPATH/bin/chaincode_example02
+	
+	Step 3: Execute chaincode install & instantiate
+		$ peer chaincode install -n goccdev -v 1.0 -p chaincode_example02
+		$ peer chaincode instantiate -n -v 1.0 -C acmechannel -c '{"Args":["init","a","100","b","200"]}'
+		
+	Step 4: Execute Chaincode query & invoke
+		$ peer chaincode invoke -C acmechannel -n goccdev -c '{"Args":["invoke","b","a","s"]}'
+		$ peer chaincode query -C acmechanel -n goccdev -c '{"Args":["query","a"]}'
+
+
+//Peer uses "fileSystemPath" to store its artifacts which includes
+	- Ledger Data
+	- Chaincode packages
+	- State Data
+	
+	$CORE_PEER_FILESYSTEMPATH
+	
+//System-Chaincode
+	* System Chaincode Implements the system behaviors so that it may be replaced by system integrator.
+	* It is part of the peer process on instantation it doesn't create docker container it is instantiated in peer process itself.
+	* As the chaincode is present within the process no GRPC call is necesssary, in memory method call will also work.
+	* Its universal for alll peers not bound to any channel.
+	
+	** 5 Default system chaincodes
+		- Lifecycle
+		- Configuration
+		- Querying
+		- Endorsement
+		- Validation
+		
+	* By default all chaincode will be disabled.
+	* system chaincode are white listed under
+	chaincode:
+		system:
+			cscc: enabled
+			lscc: enabled
+			escc: enabled
+			vscc: enabled
+			qscc: enabled
+		
+		eg. peer that will be responsible for endorsements will have to 
+			-	Lifecycle
+			-	Endorsement
+		
+		* Two ways to create sytem chaincode:
+			-	"Integrators" can crete system chaincode in golang and make it part of golang binary.
+			-	"Integrators" can create custom system chaincode using golang plugins, it is not compiled in the peer binary but
+				made available as ashared object. The plugin needs to be setup under 
+					systemPlugins:
+				and than needs to be white-listed.  
+				
+//LSCC
+	- It manages the lifecycle of the application chaincode.
+	
+	Step 1 (Installed state): Developer writes the chaincode and then installs it to the peer, at that point application chaincode is said to be installed in the peer.
+	Step 2 (Instantiated state): Developer than instantiates the chain code.
+	Step 3 (Upgraded State): Subsiquently when developer installs the chaincode for upgrade and than it is called to be in upgraded state.
+	Step 4 (Removed state): At some point chaincode is removed from the peer.
+*LSCC manges the whole lifecycle except removed (It has to be carried out manually).
+
+//How chaincode is installed in peer.
+	* It can be done by client API or peer binary.
+	* Peer validates the user (makes sure he is authorized to install chaincode on the peer).
+	* Then initiates the LSCC installation logic. (At that time pper get the package and validates it to write in local filesystem.)
+	* Similarly when intiantiate command is executed it validates the user and and passes it to LSCC for handle. 
+	* LSCC instantiate logic reads the chaincode from file system creates a docker image and launches the conatiner.
+
+//Removing chaincode from the peer
+Step 1: Kill The peer
+	$ peer chaincode list --installed
+	$ peer chaincode list --instantiated -C acmechannel
+
+Step 2: Dlete the package from filesystem
+		location of chaincode $CORE_PEER_FILESYSTEMPATH/chaincodes/gocc.1.0
+		$ rm -rf $CORE_PEER_FILESYSTEMPATH/chaincodes/gocc.1.0
+
+Step 3: Remove the chaincode image and container
+		$ docker ps -a | grep dev-devpeer-gocc-1.0
+		$ docker rm <containerID>
+		
+		$ docker images | grep dev-devpeer-gocc-1.0
+		$ docker rmi <imageID>
+	
+//ESCC
+	* The endoresement system chaincode defines the requirement for the endorsement of transaction proposals by the peers.
+	* Endorsement system chaincode does a critical role in transactrion flow.
+	* Client prepares the transactional proposal and sends it to the endorsing peer by GRPC "invoke" service point.
+	* Upon receiving it checks the users authorization and then deligates the call to the ESCC "endoresemnt" logic(ESCC).
+	* Endoresement logic than simulates the execution of the chaincode, if everything is alright it signs and send the Tx to client.
+	* Client gathers one or more Tx from endoresement peer depending on the endorsement policy than the client sends the signed tx to the orderers for delivery to other peers.
+
+//VSCC
+	* Defines the requirement for the validation of transaction/blocks by the Peers.
+	* The orderer sends the the block to Peers, Peers on receving passes it to VSCC.
+	* vscc validates each of the Tx by applying endoresement policy, it gets the endorsement policy than checks if the 
+		- Transaction is valid.
+		- Number of endorsements are good
+		- Endorsement from the right sources
+	* If all the conditions are met it writes the transaction to ledger.
+
+//CSCC
+	* CSCC along with LSCC defines the rules for the channel.
+	* the admins can use peer binary for channel create and update.
+	* these create and update requests are send to the orderer by peer.
+	* orderer validates these "config. transaction" and passes it back to peer.
+	* peer passes it to CSCC, which than writes the transaction to local ledger of the peer.
+	* when peer requests the joining of the channel, it passes to the CSCC join logic, checks and update the local config which lets the peer join.
+
+//QSCC
+	* QSCC provides the querying functionality for the transactions & blocks.
+	* It involes an API call from client to get the blocks of the transaction.
+	* This GRPC api call passes it to QSCC to read the ledger and get the block which is returned as a response to tyhe call.
+	
 ________________________________________________________________________________________________________________________________________________________
+
 
 
 _________________________________________________________________________________________________________________________________________________________
@@ -398,7 +677,7 @@ $ cryptogen generate --config=./crypto-config.yaml
 		-> Invoke chaincode
 		-> Query Chaincode
 		
-------------------------------Add peers/orderers once its generated--------------------------------
+------------------------------Add peers once its generated--------------------------------
 	//crypto-config.addpeer.yaml
 	PeerOrgs:						
 		- Name: developers		    
@@ -746,21 +1025,1224 @@ $ configtxgen -profile workspaceChannel -outputAnchorPeersUpdate ./channel-artif
 ==================================================================================================================================================
 
 
+___________________________//Hyperledger-Fabric-Network//_________________________________________________________________________________________________________
+
+Note: Orderer and Peer Node have GRPC server embeded in them. Clients invoke these services using messages encoded as "protobuf"(ProtocolBuffer)
+	  sameway Peer invokes Orderer GRPC service using messages encoded in "protobuf"(Protocol Buffer i.e binary format they are not in human redable format.)
+
+** Workflow to update the configuration in Fabric network.
+** Configuration updates in hyperledger-fabric is recorded as config trasaction in the ledger.
+	
+	*Mainly there are two steps involved.
+		1.	Fetching the latest configuration.
+		2.	Updating the confoguration and sending it back to the network.
+	
+	Step 1: First Admin will invoke the peer channel fetch command to get the latest config from network in format of probuf.
+	Step 2: "configxlator" will then convert it to json format, the administrator will then edit the JSON file to make config changes.
+	Step 3: Then the JSON format config is converted again in prbuf format using "configxlatror"	
+	Step 4:	One of the Administrator sets up the config update tx as probuf.
+	Step 5: One or more of the admin signs the file containing the config Tx update information as probuf.
+	Step 6: Then once it is signed it is sumbitted to the peer by peer binary channel update command.
+	Step 7: Then the peer transfer probuf is transfered to the orderer as transaction and delivers to all the peer in the network.
+	Step 8: The configxlator tool is used to convert binary probuffer into JSON format nad vice-versa.
+
+	** Config update involves manipulation of complex JSON base datastructures
+	   ./jq is tool which can help the admins to perform the manipulation or update of the config of the config file.
+
+
+//configxlator tool is available in 2 modes:
+	1. Command Line Interafce
+	
+			   /=> common.Block: Block format	
+			  /	
+			 /=> common.Config: Configuration transaction
+			/	
+	--type => common.Envelop: Transaction enclosed in message envelope
+            \		
+ 			 \=> common.ConfigUpdate: Update config transaction message format
+			  \
+			   \=> common.Policy: Policy message format
+	
+	
+					  /=> proto_decode: converts probuf(binary format) to JSON	$ configxlator proto_decode --type common.Block --input acme.genesis.block --output ./temp/test.json
+					 /	
+	configtxlator -->	proto_encode: JSON to converts probuf(binary format) 
+					\	
+					 \=> compute_update: this command computes the delta between 2 probuf files --original --updated --channel_id
+						
+		
+		
+		
+		
+	
+	2. REST server mode
+		$ configtxlator start // optional: --hostname localhost --port 7059
+
+
+
+//jq utility
+	
+	* command line Processor for {JSON} data
+		- Slice and filter data
+		- Transform the data
+	$ sudo apt-get install jq
+
+	$ cat file.json | jq expression
+
+_________________________Network-Configuration_______________________________________________________________________________________________________________________________
+
+** There are 5 ascpects that needs to be the part of this decision making of network setup:
+	*configtx.yaml
+	
+	1. Organization should be initialized.
+	2. Peers need to be identified.
+	3. Ordering Service.
+	4. Channels.
+	5. Clients and Application.
+	
+			      /-> Organizations	
+				 /
+	6.Policies --->	Ordering Service
+				 \
+				  \-> Channels
+
+	# Policies define who can modify the configuration element and how these modifications will be carried out.
+
+** Updating Configuration of network
+	Step 1: configtx.yaml ----configtxgen-----> Genesis Block (Which contains initial config for the network)
+
+	Step 2: The genesis block the configuration elements along with policies are stored in ledger, and furtrher config. update is concensus driven
+
+	Step 3: Config for network and channel are updated using "config update tx". 
+	
+	Step 4: These transactions go through the same procedure as normal tx except they are executed by the "config. system chaincode"(CSCC)
+	
+	Step 5: Once the config tx has been validated it is delivered by the orderer in a "config block"(special block which contains only 1 tx).
+
+
+** Orderer System channel is a special channel which is been created when the network is initialized all the peers and orderers are aware of the orderer system channel by way of the genesis block.
+   Orderer and Peer use the orderer channel for initialization and i.e the reason orderer system channel is also reffered as bootstrap channel.
+   The Network System config. is stored in the orderer channel.
+	Primary Responsebility:
+	- To orchastrate the creation of new channel(application channels).
+	
+
+** To check the latest config. of the channel:
+	Step 1: Fetch the latest Config Block
+		$ peer channel fetch config -c accmechannel -o localhost:7050 ./temp/config_block.pb
+	
+	Step 2: Translate the block to JSON
+		$ configtxlator proto_decode --input ./temp/config_block.pb --type common.Block > ./temp/config_block.json 
+	
+	Step 3: Extract the config using ./jq
+		$ export JQ_COONFIG_PATH=.data.data[0].payload.data.config.channel_group.groups.Orderer.values
+		$ cat ./temp/config_block.json | jq $JQ_COONFIG_PATH 
+
+
+** Policies: Hyperledger-Fabric-Policies embodies the rule for Access | Updates to the Network & Channel configurations.
+	
+	- Initial set of policies are defined by the consortium members.
+	- These policies are configured in configtx.yaml file and eventually it beomes part of the Genesis Block.
+	- And these policies in the genesis block controls what can be changed, who can change it and how the changes will applied to the config. elements.
+			What......
+				- Network Configuration
+				- Channel Configuration
+			Who......
+				- Identities of the signers of the network config Tx
+			
+			How.....
+				- Reffers to the rules applied to the config tx.
+				- some tx may be driven by single org but some will need consent from multiple organization(by signing the tx).
+			
+			Eg of policies: 
+						Peer: Any admin form owner org can add peer
+						System Channel: Majority of admins form all org should agree for Syatem Channel config. change
+						Add a new member: Any admin from any org
+						Remove existing member: Majority admin from all org.
+						
+	* These policies are decided by the members of the consortium				
+			
+** Rules: are expressed as Boolean expressions in terms of the Principals.
+** Principal refers to the signer's role in the organization.
+   Organization issues identities(MSP) and these identities are associated with rules or principal.
+   Four standard type of principal which can be assigned to the identities:
+	- admin
+	- member
+	- client
+	- peer
+
+** policies are defined as hierarchies
+	- /Channel: Top level change - Extremely Restrictive (because changes at this level will impact the network)
+		
+		/Chanel/Orderer: Orderer Config Changes - Very Restrictive
+		
+		/Channel/Application: App Channel Changes - Restrictive
+
+			/Channel/Application/<Org Id>: Org Level Changes
+			/Channel/Orderer/<Org Id>: Org Level Changes
+
+
+	Some standard policies:
+	
+		/Channel/Application/<Org Id>/<policy name>
+			- Readers: Governs which principal can read the channel
+			- Writers: which principal of org can Write to the channel
+			- Admins: Which org principal can carry out admin action on the channel.
+					  the admin of the orderer organization specifies how many orderers they want to use on a particular channel,
+
+		Eg. /Channel/Application/AcmeMSP/Readers  OR(AcmeMSP.member)
+			/Channel/Application/AcmeMSP/Writers  OR(AcmeMSP.member)
+			/Channel/Application/AcmeMSP/Admins   OR(AcmeMSP.admin)
+		
+* Readers role:
+	Query a chaincode
+	
+* Writers role:
+	Invoke a chaincode
+
+* Admins
+	Add an anchor peer to th org.
+
+
+** There are two ways to define poliy in configtx
+		type: 1										type:3  //JSON
+		________________________________________________________________________
+	   |		    Signature			   		|		Implicit Meta			|		  
+		------------------------------------------------------------------------
+	   | Policies: 								| Policies: 					|
+	   | 	Readers:						    | 	Readers:					|
+	   |		Type: Signature          		| 		Type: ImplicitMeta      |
+	   |		Rule: "OR('BudgetMSP.member')"  |		Rule: "ANY Readers"     | 	   
+	   |	Writers:							|	Writers:					|
+	   |		Type: Signature					|		Type: ImplicitMeta		|
+	   |		Rule: "OR('BudgetMSP.member')"	|		Rule: "ANY Writers"		|
+	   |	Admins:								|	Admins:						|
+	   |		Type: Signature					|		Type: ImplicitMeta		|
+	   |		Rule: "OR('BudgetMSP.admin')"	|		Rule: "MAJORITY Admins"	|
+	   |________________________________________|_______________________________|	
+			AND,OR and OUTOF						ANY,ALL and MAJORITY
+
+	Eg. "OR('Org1MSP.member')"  --> "Any member of Org1"
+		"OR('Org1MSP.admin', 'Org1MSP.member')" --> "Any admin of Org1 OR An member of Org2"
+		
+		"AND('Org1MSP.admin', 'Org1MSP.admin')" --> "An Admin of Org1 AND an Admin of Org2"
+		
+		"OUTOF(1,'Org1MSP.admin','Org2MSP.admin')" --> "1 OUT OF Org1 admin,Org admin"
+		"OUTOF(2,'Org1MSP.admin','Org2MSP.admin')" --> "Both admins from Org1 admin, Org2 admin"
+		
+		//Implicit meta policy
+	Eg. MAJORITY of /Channel/Application/*/Admins
+	
+** Policies are encoded within genesis block
+
+
+**ACLs (Access Control List)
+
+	- Access Control Lists are used for managing access to resources by way of Policies
+	- Resources in context of ACLs are event sources the function exposed by the system chaincode
+		eg. lscc/Get Instantiated Chaincode
+			qscc/Get Chain Info
+	- Functions exposed by user's chaincode are also considered resources.
+	- User Access these resources using client SDK and the binary tools.
+	- Access control is applied to who can access these resources by use of policies.
+
+	//configtx
+		Application:
+			ACLs:
+			
+	NOTE: in order to add ACL subsection you must add the capabilities subsection.
+		  Capabilities:
+			Application: &ApplicationCapabilities
+				V1_2: true
+
+** Overriding policies 
+
+	step 1: prepare the policy
+	
+	Applications:
+		ACLs: &ACLsDefault
+		
+		Policies:
+			Readers:
+				:
+			StrictAdminPolicy:
+				Type: ImplicitMeta
+				Rule: "ANY Admins"			
+								
+	step 2: override the default ACLs	
+	
+		ACLs: &ACLsDefault
+			lscc/GetInstantiatedChaincode: /Channel/Application/StrictAdminPolicy
+			qscc/GetChainInfo: /Channel/Application/StrictAdminPolicy
+		
+				
+_________________________Certification-Authority_______________________________________________________________________________________________________________________________
+				
+	** Actors/Idntities in block-cahin network:
+		- Admin  	- User  - Registrar
+		- Orderer 	- Peer  - Application
+				
+	** Each of these actors are issued certificate, certificate encapsulate information about each of these	actors/Identities,
+		Certificate has "role" assigned to the identity and there are some other "attributes" in the certificate.
+		Role|Attributes determines the privilages that actor have.
+		
+	** Registrar : Agents of trusted certification-authority are known as registrar
+		- Issue Identities
+		- Control Privileges of Identities they create.
+		- uses "fabric-ca-client identity" command to manage the idntities
+				
+	** Certification Cretion process:
+		Step 1: Register(Imvitation):
+				Carried out by registrar, registrar registers an identity which leads to the generation of enrollment ID nad enrollment secret. 
+				"Enrollment ID" and "Enrollment secret" are securely provided to the end user which owns the identity.
+		
+		Step 2: Enrollment(Acceptance):
+				Enrollment process leads to the generation of certificate for the end user.
+				
+	** To add an Identity registrar has to provide following specification:
+		Name: 
+		Type: # Peer, Orderer, Client etc/hosts
+		Affiliation: # Organization/Department to which the identity belongs
+		Max Enrollments: # How many time the identity owner can execute the enroll step (by counting max time enrollment ID and the secret can be used).
+							Max enrollment cant exceed registrar's max enrollment.
+		Attributes: [Standard | Custom]# Controls the privilages assigned to the identity
+					# is used for authorization, there are standard attributes and registrar can create custom attributes (attributes name are created with . notation) standard attributes have name that always start with "hf." notation
+					*List of standard attributes
+					     _____________________________________
+						|Name					  |	Type	  |
+						'-------------------------'-----------'
+						|hf.Registrar.Roles		  |	List      |
+						|hf.Rgistrar.DelegateRoles|	List	  |
+						|hf.Rgistrar.Attributes	  |	List	  |
+						|hf.GenCRL				  |	Boolean	  |
+						|hf.Revoker				  |	Boolean   |
+						|hf.AffiliationMgr		  |	Boolean   |
+						|hf.IntermediateCA		  |	Boolean   |
+						'-------------------------'-----------'
+		* The registrar or the identity which issue new identities have a set of attribute assgned to their identity and these attribute decide which type of identity the registrar can create.	
+				
+				
+-------------------Fabric CA Server----------------------------------------------
+** Is used for creation | management of CA	for blockchain network		
+** Primarily Fabric CA is used for setting the "Private Root CA" & "Intermediate CA (ICA)"			
+** There are 3 parts in the fabric CA implementation.
+	- CA Server: Exposes Certification Creation & Management services
+	- CA client: Utility for interaction with the CA server			
+	- CA SDK: Libraries for writing apps using CA server
+
+** CA server exposes REST APIs the CA Client and CA SDK consume these APIs
+				
+** CA Server is available as a single binary "fabric-ca-server"		
+			- single node
+			- cluster
+			
+			
+			
+			
+						  /-> version: Version of the binary
+						 /
+		fabric-ca-server-->	init: initialize the CA Server
+						 \	
+						  \-> start: start the Server 	$fabric-ca-server start -b <adminID:admin_password>  # b : bootstrap identity
+								# First time you execute this command it will carry out the initialization of the CA-Server, as part of initialization CA-Server generates "fabric-ca-server-config" file and self signed "CA certificate and Key"
+								# all of the identities are manged in a persistant store using SQLite and also manages data in "filesystem folder" the location can be specified by using "-h" flag
+								# if -h flag is not found it searches for-
+																		   \
+							     Environment variable FABRIC_CA_SERVER_HOME/
+								<if not found then searches>	           \
+								        Environment variable FABRIC_CA_HOME/
+								<if not found then searches>               \
+										   Environment variable CA_CFG_PATH/
+								    <if not found then uses>               \
+															 Current Folder/
+								# if the the server is already initialized and the certificate exists then using start command will not generate config files and cert agin it will just start to listen for incomming request.
+								# if the server is not initialized it first check the config to check whether to deploy an "intermediate CA" or "root CA", if it is a intermediate CA then it gets its certtificate from root CA and launches, if it is a root CA then it creates the certificate and launches.
+			
+*** The REST API documentation(swagger) is present here https://raw.githubusercontent.com/acloudfan/HLF2-Miscellaneous/master/fabric-ca-swagger.yaml
+
+-----------------------------------------------//fabric-ca-server-config.yaml//------------------------------------------------------	
+
+	version: 						# FABRIC_CA_SERVER_VERSION
+	
+	port: # default=7054  FABRIC_CA_SERVER_PORT
+	
+	crlsizelimit: # certification revocation size limit default=512000  FABRIC_CA_SERVER_CRLSIZELIMIT
+			
+	debug: # enable/disable Debug level logging		FABRIC_CA_SERVER_DEBUG
+	
+	ca:
+		name: acme-ca
+		keyfile: ca-cert.pem
+		certfile: # if certification already exixts for root CA its not needed
+		chainfile:
+	
+	csr: # used for generation signed certificate
+		cn: Acme-CA
+		names:
+			- C: US
+			  ST: "Ney York"
+			  L: Newark
+			  O: Acme
+			  OU: B2B
+		hosts: # This is where the CA will be dployed
+			- acme.com
+			- localhost
+		ca:
+			expiry: 131400h
+		
+	
+	intermediate: 
+	
+	affiliations:
+		acme:
+			- logistics
+			- accounting
+		orderer:
+			- support
+	
+	signing: # (it governs the enrollment process) defines how the other certificates will be signed by CA server
+	
+	registry: # bootstrap identity
+		maxenrollments: -1	# -1: unlimited, 0: same as registrar
+	# the identities specification may have custom attributes added by the registrar.
+	# custom attributes have have application level access control.
+	# so the chain-code has acces to the custom attribute as well as standard attribute.
+	# eg. there are certain actios exposed by the chaincode that need to be taken only 
+	# by the administrator then a custom attr like LogisticAppAdmin = true can be set and checked by chaincode to allow it or not.
+		identities:
+			- name: admin
+			  pass: adminpw
+			  type: client
+			  affiliation: ""
+			  attrs:
+			    hf.Registrar.Roles: "*"
+				hf.Rgistrar.DelegateRoles: "*"	  
+				hf.Rgistrar.Attributes: "*"	  
+				hf.GenCRL: true				  	  
+				hf.Revoker: true				 
+				hf.AffiliationMgr: true		  
+				hf.IntermediateCA: true		
+	# by default attributes are not added to the enrollment certificate of an identity,
+	# registrar needs to explicitly request for the attributes to be added to ecert, i.e how chaincode will get access to the attributes fro decision making statement.
+	
+	db: # Type of db to be used for identity persistence (default SQLite) MySQL and Postgrace can also be used.
+		type: sqlite3
+		datasource: fabric-ca-server.db
+		
+	ldap: # can also be used for managing Identity persistence
+	
+	tls:
+	
+	crl:
+	
+	bccsp: 
+	
+#*** single CA server process may host multiple CA to configure multiple CA authorities on the same CA server
+	cacount:
+	cafiles:
+
+			
+---------------------------------------------------------------------------------------------------------------------------------			
+	** precedence --> FLAGS > ENVIRONMENT > YAML		
+			
+*** Root CA Server setup
+	STEP 1: setup the parameters in fabric-ca-server-config.yaml
+	STEP 2: execute the init command
+		$ fabric-ca-server init
+		$ fabric-ca-server start
+	STEP 3: examine the root certificate
+		
+			
+*** fabric-ca-client
+	- is a binary for fabric-ca-client
+	- picksup configuration from "fabric-ca-client-config.yaml"
+	- it needs acces to the crypto material(certificate and key) for identity it uses to ineract with the CA server
+	- "-h" looks for configuration 
+	# if -h flag is not found it searches for-
+											  \
+	Environment variable FABRIC_CA_CLIENT_HOME/
+    <if not found then searches>	          \
+		   Environment variable FABRIC_CA_HOME/
+   <if not found then searches>               \
+              Environment variable CA_CFG_PATH/
+	   <if not found then uses>               \
+					   $HOME/.fabric-ca-client/
+	
+	
+							   
+							   /-> affiliation: Manage affiliation		
+							  /
+							 /-> revoke: Revoke Identity
+						    /
+						   /-> getcainfo: Gets the CA information
+						  /										/-> to modify an user	  $ fabric-ca-client identity modify user --affiliation org2 --attrs myAttr=true to add custom attributes to ecert $ fabric-ca-client identity modify user -attrs myAttr true:ecert # to add custom attributes and enable them you have to use ":ecert" as suffix
+						 /									   /-> to remove an identity  $ fabric-ca-client remove <enrollment_ID i.e user1> # by default remove is disabled to enable the fabric-ca-server start --cfg.identities.allowremove
+					    /-> identity: Manages the identities --> to list all ids  		  $ fabric-ca-client identity list
+					   /									   \-> to add an identity	  $ fabric-ca-client identity add <enrollment_ID i.e user1> --secret --type --maxenrollments --affiliation --attrs <comma seperated>    # or can use JSON string using $ --json '{"type":"user", "affiliation:"org1","maxenrollments":2}'  
+	fabric-ca-client --> enroll: Enroll an Identity		$ fabric-ca-client enroll -u http://admin:adminpw@localhost:7054
+					   \
+						\-> register: Registers an identity		$ fabric-ca-client register --id.name user --id.secrett userpw --id.type user # rest is default
+						 \
+						  \-> reenroll: Re-Enroll an identity    $ fabric-ca-client reenroll 
+						   \
+						    \-> gencrl: Generate Certification Revocation List
+							 \
+							  \-> gencsr: Generate a Certificate Signing Request
+							   \
+								\-> certificate: Manage certificates
+
+*** Regeistering a new user cn be done by either using "register" or "identity add" command by registrar.	
+	
+NOTE: there are 5 checks that are carried out by CA server in time of registering a new identity:
+	1. If registrar can create an identity of requested type. 
+		# The registrar identity must ahave the standard Roles attribute hf.Registrar.Roles 
+		# comma seperated list of identity types 
+			- that dectets which type of identity registrar can create 
+			Eg. hf.Registrar.Roles = "peer,app,user" than the registrar can only create these type of identities. 
+	
+	2. If the registrar can assign the requested affiliation to the new/modified identity.
+		# These rule checks the registrar's affiliation
+		# The new identities affiliation can be equal to registrars affiliation or prefix of registrsrs affilstion.
+		# Eg. Affiliation="acme.logistics" 
+		# new identity can have acme.logistics affiliation and acme.logistics.dept1 but not acme or acme.b2b as they are above registrars affiliation.
+		
+	3. Can add/change the requested Standard Attribute
+		1. if the registrar has that attribute
+		2. check attribute types
+			- if it is a "list" type than it checks whether it is a subset or equal of registrars
+			- if "boolean" than registrar's value also ahs to be true.
+			
+	4. Can add/change the requested Custom Attribute
+		# hf.Registrar.Attributes specifies the pattern for custom attributes regitrara able to manage.
+		# Eg. if registrar has attribute hf.Registrar.Attributes = "LogisticApp"
+		# then only attribute registrar can manage is "hf.Registrar.Attributes" any other request to add or change custom attribute like "LogisticApp.variable1" will fail. 
+		# Eg. if registrar has attribute hf.Registrar.Attributes = "Custom.*" than any request in form of "Cutom.variable1" will succed
+	
+	5. Can add/change the value of hf.Registrar.Attributes.
+		# value of this attribute is used to determine if registrar will be able to successfully add or change this standard attribute or not.
+		# if the value i.e specified for te new identity is equal to or subset of value "hf.Registrar.Attributes" then it will go through
+		# Eg. hf.Registrar.Attributes="myAttr,variables.*" will allow hf.Registrar.Attributes = "myAttr", hf.Registrar.Attributes = "variables.my" but will not allow hf.Registrar.Attributes="newVariable"
+	
+	
+** when we start the fabric-ca-server by using $ fabric-ca-server start -b admin:adminpw
+		- by bootstrping/registering with custom admin username and password for admin
+		- but before this identity can be used by admin CA client(End User) it needs to be enrolled 
+		  and for that fabric-ca-client enroll command is used against CA server with enrollment ID and secret 
+		  it leads to the generation of the certificate in the home folder for the fabric CA client
+	$ fabric-ca-client enroll -u http://admin:adminpw@localhost:7054
+									   |_____________|
+											 |
+		requires the enrollment Id/password which we passed during bootstraping CA server
+	
+		- successful execution of the enroll command leads to the generation of "fabric-ca-client-config.yaml" 
+		  file under CA client home folder and MSP directory in CA client HOME folder
+	
+** the reenroll command leads to the re-generation of certificates and key file the number of time reenroll
+   can be executed depends on "Max Enrollments" attribute in the identity specification 
+	if "-1" -> The ID and the secret can be used unlimited times.
+	
+	- picksup configuration from "fabric-ca-client-config.yaml"
+	
+	
+	
+***Steps of how to create a new user and register him through fabric-ca-server.
+	STEP 1: Add an additional bootstrap identity(user)
+			- by updating CA server config "fabric-ca-server-config"
+				registry: # bootstrap identity
+					
+				identities:
+					- name: user
+					pass: userpw
+					type: user
+					affiliation: "ACME"
+					maxenrollments: 2	
+					attrs:
+						hf.Registrar.Roles: "*"
+						hf.Rgistrar.DelegateRoles: "*"	  
+						hf.Rgistrar.Attributes: "*"	  
+						hf.GenCRL: false				  	  
+						hf.Revoker: false				 
+						hf.AffiliationMgr: false		  
+						hf.IntermediateCA: false		
+	
+		Once updated start the $ fabric-ca-server using "start" command.
+	
+	
+	STEP 2: Enroll the admin identity.
+			$ export FABRIC_CA_CLIENT = `pwd/ca/`/client/admin
+			$ fabric-ca-client enroll -u http://admin:adminpw@localhost:7054
+	
+	STEP 3: Enroll the user identity.
+			$ export FABRIC_CA_CLIENT = `pwd/ca/`/client/user
+			$ fabric-ca-client enroll -u http://user:userpw@localhost:7054
+	
+	
+-------------------------------------fabric-ca-client-config.yaml----------------------------------------------
+	# url of the CA Server
+	url:
+		
+	# Name of the CA server if multiple CA hosted in serevr
+	caname:
+		
+	#Folder path to msp directory
+	msp:
+		
+	csr:
+	
+	tls:
+		# list of trusted root certificate files
+		certfiles: 
+			# if CA server has enable client authentication then provide the parameters under the subsection client.
+			client:
+				# client cert/pem file
+				certfile:
+				# client key/pem file
+				keyfile:
+	
+	# used by Register command
+	id:
+		#picksup default value if not changed by flags --id.name or environment variable
+		name: 
+		# --id.type
+		type:
+		# --id.affiliation
+		affiliation:
+		maxenrollments:
+		attributes
+--------------------------------------------------------------------------------------------------------			
+** precedence --> FLAGS > ENVIRONMENT > YAML		
+			
+//Enroll command under the hood	
+# fabric-ca-client prepeares the csr(cerificate signing request) and sends it to the fabric CA seerver.
+  the parameters of the csr are picked from the csr section of YAML, the CA server reads the request 
+  signs the certificate and sends it back to the fabric-ca-client on receiving the certificate it stores it in its MSP.
+# user may generate the CSR by using $ fabric-ca-client gencsr
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+============================================================================================================================
+--------------------------------------------MULTI ORG ACME PROJECT---------------------------------------------------------
+============================================================================================================================
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------Roles in the setup--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+ ________________________________			 ________________________________			 ________________________________
+|		  CA-server				 |			|		  organizations			 |			|	organization identities		 |
+'--------------------------------'			'--------------------------------'			'--------------------------------'
+|  admin 						 |			|  acme-admin					 |			|  human identities				 |
+|  # this is the identity 		 |			|  budget-admin 		 		 |			|  peer					 		 |
+|  # which we will bootstrap	 |			|  orderer-admin	 			 |			|  ordering-service				 |
+|								 |			|   		 					 |			|  client					 	 |
+|								 |			|  		 						 |			|  		 						 |
+'--------------------------------'			'--------------------------------'			'--------------------------------'
+
+# for all org it can manage identities		# for their org they can manage ids			# type of org ids are defined by org admins
+
+Departments of the organization
+	acme:
+		- logistics
+		- accounting
+		- b2b
+	orderer:
+		- support
+	budget:
+		- b2b
+		
+-----------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------Folder Structure for ca--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+> ca
+	> multi-org-ca
+		> server
+		> client              							# All client identities are managed
+			> caserver									# Home folder for bootstrap identity(admin)
+				> admin									# crypto for admin identity
+			> budget
+			> acme
+			> orderer
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 1-----------------------------Root CA server setup--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+
+Step 1.1: Set up the FABRIC_CA_SERVER_HOME variable
+			$ export FABRIC_CA_SERVER_HOME=multi-org-ca/server
+			
+Step 1.2: Create "fabric-ca-server-config.yaml" file in ./server location
+			# the "bootsrap identity" in yaml file is:
+				Enrollment ID: admin
+				Enrollment secret: pw
+
+Step 1.3: Start the ca server
+			$ fabric-ca-server start 2> $ABRIC_CA_SERVER_HOME/server.log
+
+________________________________________fabric-ca-server-config.yaml_________________________________________________________
+registry:
+	maxenrollments: -1
+	identities:
+		- name: admin
+		  pass: pw
+		  type: client
+		  affiliation: ""
+		  attrs:
+				hf.Registrar.Roles: "*"
+				hf.Rgistrar.DelegateRoles: "*"	  
+				hf.Rgistrar.Attributes: "*"	  
+				hf.GenCRL: true				  	  
+				hf.Revoker: true				 
+				hf.AffiliationMgr: true		  
+				hf.IntermediateCA: true	
+csr:
+	cn: Acme-CA
+	names: 
+	  - C: US
+	   ST: "New York"
+	    L: Newark
+		O: Acme
+	   OU: B2B
+	hosts:
+		- acme.com
+		- localhost
+	ca:
+	  expiry: 131400h
+
+---------------------------------------Folder Structure AFTER STEP 1--------------------------------------------------------------
+> ca 
+	> multi-org-ca
+		> server
+			> msp								*
+			> ca-cert.pem						*
+			> fabric-ca-server-config.yaml
+			> fabric-ca-server.db				*
+			> IssuerPublicKey					*
+			> IssuerRevocationPublicKey			*
+			> server.log						*
+		> client              							# All client identities are managed
+			> caserver									# Home folder for bootstrap identity(admin)
+				> admin									# crypto for admin identity
+			> budget
+			> acme
+			> orderer
+
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 2-----------------------------Enroll Admin Identity--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+
+Step 2.1: Set up the FABRIC_CA_CLIENT_HOME variable
+			$ export FABRIC_CA_CLIENT_HOME=multi-org-ca/client/caserver/admin
+
+Step 2.2: Create "fabric-ca-client-config.yaml" file in  $FABRIC_CA_CLIENT_HOME
+
+Step 2.3: Execute the enroll command for admin
+			$ fabric-ca-client enroll -u http://admin:pw@localhost:7054
+
+________________________________________fabric-ca-client-config.yaml_________________________________________________________
+csr:
+	cn: admin
+	serialnumber:
+	names:
+	  - C: US
+	   ST: "New York"
+	    L: "Location"
+		O: Acme
+	   OU: "Security"
+	hosts:
+		- acme.com
+		- localhost
+id:
+	name: XYZ
+	type: user
+	affiliation: acme
+	maxenrollments: 2
+	attributes:
+
+---------------------------------------Folder Structure AFTER STEP 2--------------------------------------------------------------
+> ca
+	> multi-org-ca
+		> server
+			> msp								
+			= ca-cert.pem						
+			= fabric-ca-server-config.yaml
+			= fabric-ca-server.db				
+			= IssuerPublicKey					
+			= IssuerRevocationPublicKey			
+			= server.log						
+		> client              							# All client identities are managed
+			> caserver									# Home folder for bootstrap identity(admin)
+				> admin									# crypto for admin identity
+					> msp								*
+						> cacerts
+						> keystore
+						> signcerts
+						> user
+					= fabric-ca-client-config.yaml
+			> budget
+			> acme
+			> orderer
+
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 3-----------------------------As CA Admin Register Identities--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+
+Step 3.1: Set up the FABRIC_CA_CLIENT_HOME variable
+			$ export FABRIC_CA_CLIENT_HOME=multi-org-ca/client/caserver/admin
+			
+Step 3.2: Create "fabric-ca-client-config.yaml" files in respective orgs
+
+Step 3.3: Execute the enroll command for admin
+			$ export ATTRIBUTES='"hf.Registrar.Roles=peer,user,client","hf.AffiliationMgr=true","hf.Revoker=true"' 
+			$ fabric-ca-client register --id.type client --id.name acme-admin --id.secret pw --id.affiliation acme --id.attrs $ATTRIBUTES
+
+Step 3.4:   $ export ATTRIBUTES='"hf.Registrar.Roles=peer,user,client","hf.AffiliationMgr=true","hf.Revoker=true"' 
+			$ fabric-ca-client register --id.type client --id.name budget-admin --id.secret pw --id.affiliation budget --id.attrs $ATTRIBUTES
+
+Step 3.5:   $ export ATTRIBUTES='"hf.Registrar.Roles=orderer"' 
+			$ fabric-ca-client register --id.type client --id.name orderer-admin --id.secret pw --id.affiliation orderer --id.attrs $ATTRIBUTES
+			
+________________________________________fabric-ca-client-config.yaml_________________________________________________________
+csr:
+	cn: acme-admin
+	names: 
+	  - C: US
+	   ST: "New York"
+	    L: Newark
+		O: acme
+	   OU: 
+	hosts:
+		- acme.com
+		- localhost
+id:
+	name: XYZ
+	type: user
+	affiliation: acme
+	maxenrollments: 2
+	attributes:
+
+________________________________________fabric-ca-client-config.yaml_________________________________________________________
+csr:
+	cn: budget-admin
+	names: 
+	  - C: US
+	   ST: "California"
+	    L: "Los Angeles"
+		O: budget
+	   OU: 
+	hosts:
+		- budget.com
+		- localhost
+id:
+	name: XYZ
+	type: user
+	affiliation: budget
+	maxenrollments: 2
+	attributes:
+________________________________________fabric-ca-client-config.yaml_________________________________________________________
+csr:
+	cn: orderer-admin
+	names: 
+	  - C: US
+	   ST: "New York"
+	    L: Newark
+		O: acme
+	   OU: 
+	hosts:
+		- acme.com
+		- localhost
+id:
+	name: XYZ
+	type: user
+	affiliation: acme
+	maxenrollments: -1
+	attributes:
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 4-----------------------------Enrolling Org Admins Identities--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+
+Step 4.1: Set up the FABRIC_CA_CLIENT_HOME variable
+			$ export FABRIC_CA_CLIENT_HOME=multi-org-ca/client/acme/admin
+Step 4.2: Execute the enroll command for acme-admin
+			$ fabric-ca-client enroll -u http://acme-admin:pw@localhost:7054
+			
+Step 4.3: Set up the FABRIC_CA_CLIENT_HOME variable
+			$ export FABRIC_CA_CLIENT_HOME=multi-org-ca/client/budget/admin
+Step 4.4: Execute the enroll command for budget-admin
+			$ fabric-ca-client enroll -u http://budget-admin:pw@localhost:7054
+			
+Step 4.5: Set up the FABRIC_CA_CLIENT_HOME variable
+			$ export FABRIC_CA_CLIENT_HOME=multi-org-ca/client/orderer/admin
+Step 4.6: Execute the enroll command for orderer-admin
+			$ fabric-ca-client enroll -u http://orderer-admin:pw@localhost:7054
+						
+Step 4.6: Confirm the registration of the users by running the following command as CA Server admin
+			$ fabric-ca-client identity list
+
+---------------------------------------Folder Structure AFTER STEP 4--------------------------------------------------------------
+>ca
+	> multi-org-ca
+		> server
+			> msp								
+			= ca-cert.pem						
+			= fabric-ca-server-config.yaml
+			= fabric-ca-server.db				
+			= IssuerPublicKey					
+			= IssuerRevocationPublicKey			
+			= server.log						
+		> client              							# All client identities are managed
+			> caserver									# Home folder for bootstrap identity(admin)
+				> admin									# crypto for admin identity
+					> msp								
+						> cacerts
+						> keystore
+						> signcerts
+						> user
+					= fabric-ca-client-config.yaml
+			> budget
+				> admin							    *
+					> msp							*
+						> cacerts
+						> keystore
+						> signcerts
+				= fabric-ca-client-config.yaml		*
+			> acme	
+				> admin								*
+					> msp							*
+						> cacerts
+						> keystore
+						> signcerts
+				= fabric-ca-client-config.yaml		*
+			> orderer
+				> admin 							*
+					> msp							*
+						> cacerts
+						> keystore
+						> signcerts
+				= fabric-ca-client-config.yaml		*
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 5-----------------------------Register and Enroll User Identities--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+
+Step 5.1: Set up the FABRIC_CA_CLIENT_HOME variable
+			$ export FABRIC_CA_CLIENT_HOME=multi-org-ca/client/acme/admin
+
+Step 5.2: Execute the enroll command for user jdoe of logistics
+			$ fabric-ca-client register --id.type user --id.name jdoe --id.secret pw --id.affiliation acme.logistics
+
+Step 5.3: Now jdoe has to "enroll" by using his own credentials
+			$ export FABRIC_CA_CLIENT_HOME=multi-org-ca/client/acme/jdoe
+			$ fabric-ca-client enroll -u http://jdoe:pw@localhost:7054
+
+
+---------------------------------------Folder Structure AFTER STEP 5--------------------------------------------------------------
+
+		> acme	
+			> admin								
+				> msp							
+					> cacerts
+					> keystore
+					> signcerts
+			> jdoe						*
+				> admincerts					# Manually created and pasted acme/admin/msp/signcerts/cert.pem from cacerts of admin
+					= cert.pem
+				> cacerts
+					= localhost-7054.pem
+				> keystore
+					= a9hj8709hdfoi9880...
+				> signcerts
+					= cert.pem
+				> user
+			= fabric-ca-client-config.yaml		
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 6-----------------------------Setup Organization MSP--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+	
+Step 6.1: $ export ROOT_CA_CERTIFICATE=multi-org-ca/server
+		  $ export FABRIC_CA_CLIENT_HOME=multi-org-ca/client/acme/admin
+		  $ export DESTINATION_CLIENT_HOME=multi-org-ca/client/acme
+		
+Step 6.2: $ mkdir -p $DESTINATION_CLIENT_HOME/msp/admincerts
+		  $ mkdir -p $DESTINATION_CLIENT_HOME/msp/cacerts
+		  $ mkdir -p $DESTINATION_CLIENT_HOME/msp/keystore
+
+Step 6.3: $ cp $ROOT_CA_CERTIFICATE $DESTINATION_CLIENT_HOME/msp/cacerts
+		  $ cp $FABRIC_CA_CLIENT_HOME/msp/signcerts/* $DESTINATION_CLIENT_HOME/msp/admincerts
+		  $ cp $FABRIC_CA_CLIENT_HOME/msp/keystore/* $DESTINATION_CLIENT_HOME/msp/keystore
+		  
+---------------------------------------Folder Structure AFTER STEP 6--------------------------------------------------------------
+		> acme	
+			> admin								
+				> msp							
+					> cacerts
+					> keystore
+					> signcerts
+			> jdoe						
+			> msp						*
+				> admincerts			
+					= cert.pem
+				> cacerts
+					= ca-cert.pem
+				> keystore
+					= a9hj8709hdfoi9880...				
+			= fabric-ca-client-config.yaml			
+	
+
+-----------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------Folder Structure for orderer--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+	> orderer
+		> multi-org-ca
+	> ca
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 7-----------------------------Orderer Setup--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+	
+Step 7.1: Setup configtx.yaml
+		Create configtx.yaml file under orderer/multi-org-ca
+		# Under configtx setup the three organization with their MSP directories pointing to their org's MSP directory.
+		# Under profile section create "AirlineOrdererGenesis" which is to be used for generating genesis block.
+		# Add another profile for channel "AirlineChannel"
+		
+Step 7.2: Generate the Genesis Block
+		$ configtxgen -profile AirlineOrdererGenesis -outputBlock ./airline-genesis.block -chanelID ordererchanel
+		
+Step 7.3: As Orderer admin Setup Orderer identity & MSP 
+		1. $ export FABRIC_CA_CLIENT_HOME=../../ca/multi-org-ca/client/orderer/admin
+		# register the orderer identity
+		2. $ fabric-ca-client register --id.type orderer --id.name orderer --id.secret pw --id.affiliation orderer
+		# enroll the orderer
+		3. $ fabric-ca-client enroll -u http://orderer:pw@localhost:7054
+		# Copy the admincerts to appropriate folder
+		4. $ mkdir $FABRIC_CA_CLIENT_HOME/../orderer/msp/admincerts
+		   $ cp $FABRIC_CA_CLIENT_HOME/msp/signcerts/* $FABRIC_CA_CLIENT_HOME/../orderer/msp/admincerts
+
+Step 7.4: Setup orderer.yaml file
+		Create orderer.yaml file under orderer/multi-org-ca
+		# Under general section set the genesis file location to "./airline-genesis.block" (still not created)
+		# Set the LocalMSPDir "../../ca/multi-org-ca/client/orderer/orderer/msp " (still not created)
+		
+Step 7.5: Launch the Orderer
+		$ orderer
+
+-----------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------Folder Structure after step 7--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+	> orderer
+		> multi-org-ca
+			= configtx.yaml
+			= orderer.yaml
+			= airline-genesis.block
+	> ca
+		> multi-org-ca
+			> server
+			> client
+				> acme
+				> caserver
+				> orderer
+					> admin
+					> msp
+					> orderer
+						> msp						*
+							> admincerts			# copy the admin certificate from admin of the orderer org
+							> cacerts
+							> keystore
+							> signcerts
+							> user
+					= fabric-ca-client-config.yaml
+					
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 8.0-----------------------------Anchor Peer Setup--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------	
+	Step 8.0.1: One of the Admin creates Anchor Peer Update transaction file
+				$ configtxgen -profile AirlineChannel -outputAnchorPeersUpdate ./anchor/AcmeAnchor.tx -channelID airlinechannel
+	
+	Step 8.0.2: Organization admin registers the peer
+				$ export FABRIC_CA_CLIENT_HOME=$PWD/../../ca/multi-org-ca/client/acme/admin
+				$ fabric-ca-client register --id.type peer --id.name acme.anchor --id.secret pw --id.affiliation acme
+
+	Step 8.0.3: Peer enrolls itself
+				$ export FABRIC_CA_CLIENT_HOME=$PWD/../../ca/multi-org-ca/client/acme/anchor
+				$ fabric-ca-client enroll -u http://acme.anchor:pw@localhost:7054
+
+	Step 8.0.4: Setting up the MSP for newly created peer
+				$ export ADMIN_CLIENT_HOME=$PWD/../../ca/multi-org-ca/client/acme/admin
+				$ mkdir -p $FABRIC_CA_CLIENT_HOME/msp/admincerts
+				$ cp $ADMIN_CLIENT_HOME/msp/signcerts/* $FABRIC_CA_CLIENT_HOME/msp/admincerts
+
+	Step 8.0.5: Launch the peer	
+				1. Set the environment variables.
+					$ export CORE_PEER_ID=acme.peer1
+					$ export CORE_PEER_MSPCONFIGPATH=$PWD/../../ca/multi-org-ca/client/acme/admin/msp
+					$ export CORE_PEER_LOCALMSPID=acmeMSP
+					$ export FABRIC_CFG_PATH=/peer/multi-org-ca/acme
+					$ export CORE_PEER_FILESYSTEM_PATH="/var/ledgers/multi-org-ca/acme/acme.anchor/ledger"
+					
+					$ export CORE_PEER_LISTENADDRESS=localhost:7051
+					$ export CORE_PEER_ADDRESS=localhost:7051
+					$ export CORE_PEER_CHAINCODELISTENADDRESS=localhost:7052
+					$ export CORE_PEER_EVENTS_ADDRESS=localhost:7053
+					$ export CORE_PEER_GOSSIP_BOOTSTRAP=localhost:7051
+					$ export PEER_LOGS=/acme/acme.anchor/
+					
+					$ mkdir -p $PEER_LOGS
+					
+				2. Launch the peer
+					$ sudo -E peer node start 2> $PEER_LOGS/anchor.log &
+
+	Step 8.0.6: Check if the peer has joined any channel		
+				$ peer channel list
+				
+				
+-----------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------Folder Structure after Step 8.0--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
+	> orderer
+	> ca
+	> peer	
+		> multi-org-ca
+			> acme
+				> anchor
+					= AcmeAnchor.tx
+				= core.yaml
+				= configtx.yaml
+				= airline-channel.tx
+		
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 8-----------------------------Peer Setup--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------		
+
+Step 8.1: Organization admin registers the peer
+		$ export FABRIC_CA_CLIENT_HOME=$PWD/../../ca/multi-org-ca/client/acme/admin
+		$ fabric-ca-client register --id.type peer --id.name acme.peer1 --id.secret pw --id.affiliation acme
+
+Step 8.2: Peer enrolls itself
+		$ export FABRIC_CA_CLIENT_HOME=$PWD/../../ca/multi-org-ca/client/acme/acme.peer1
+		$ fabric-ca-client enroll -u http://acme.peer1:pw@localhost:7054
+
+Step 8.3: Setting up the MSP for newly created peer
+		$ export ADMIN_CLIENT_HOME=$PWD/../../ca/multi-org-ca/client/acme/admin
+		$ mkdir -p $FABRIC_CA_CLIENT_HOME/msp/admincerts
+		$ cp $ADMIN_CLIENT_HOME/msp/signcerts/* $FABRIC_CA_CLIENT_HOME/msp/admincerts
+
+Step 8.4: Launch the peer	
+		1. Set the environment variables.
+			$ export CORE_PEER_ID=acme.peer1
+			$ export CORE_PEER_MSPCONFIGPATH=$PWD/../../ca/multi-org-ca/client/acme/admin/msp
+			$ export CORE_PEER_LOCALMSPID=acmeMSP
+			$ export FABRIC_CFG_PATH=/peer/multi-org-ca/acme
+			$ export CORE_PEER_FILESYSTEM_PATH="/var/ledgers/multi-org-ca/acme/acme.peer1/ledger"
+			
+			$ export CORE_PEER_LISTENADDRESS=localhost:7051
+			$ export CORE_PEER_ADDRESS=localhost:7051
+			$ export CORE_PEER_CHAINCODELISTENADDRESS=localhost:7052
+			$ export CORE_PEER_EVENTS_ADDRESS=localhost:7053
+			$ export CORE_PEER_GOSSIP_BOOTSTRAP=localhost:7051
+			$ export PEER_LOGS=/acme/acme.peer1/
+			
+			$ mkdir -p $PEER_LOGS
+			
+		2. Launch the peer
+			$ sudo -E peer node start 2> $PEER_LOGS/peer1.log &
+
+Step 8.4: Check if the peer has joined any channel		
+		$ peer channel list
+
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 9-----------------------------Application Channel Creation--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------		
+
+Step 9.1: One of the Org Admin creates the <channel_name>.tx file
+		$ configtx -profile AirlineChannel -outputCreateChannelTx ./airline-channel.tx -channelID airlinechannel
+		
+Step 9.2: Organization Admins sign the <channel_name>.tx (based on policy)
+		$ export CORE_PEER_MSPCONFIGPATH=$PWD/../../ca/multi-org-ca/client/acme/admin/msp
+		$ export CORE_PEER_LOCALMSPID=acmeMSP
+		$ export CHANNEL_TX_FILE=$PWD/../../orderer/multi-org-ca/airline-channel.tx
+		$ peer channel signconfigtx -f $CHANNEL_TX_FILE
+
+Step 9.3: One of the Org Admin submits the Channel Create Tx
+		$ export CORE_PEER_MSPCONFIGPATH=$PWD/../../ca/multi-org-ca/client/acme/admin/msp
+		$ export CORE_PEER_LOCALMSPID=acmeMSP
+		$ export $ORDERER_ADDRESS="localhost:7050"
+		$ peer channel create -o $ORDERER_ADDRESS -c airlinechannel -f $CHANNEL_TX_FILE
+
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 10-----------------------------Peer joins the Application Channel--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------		
+
+Step 10.1: Fetch the channel config
+			1. Set the environment variables.
+				$ export CORE_PEER_ID=acme.peer1
+				$ export CORE_PEER_MSPCONFIGPATH=$PWD/../../ca/multi-org-ca/client/acme/admin/msp
+				$ export CORE_PEER_LOCALMSPID=acmeMSP
+				$ export FABRIC_CFG_PATH=/peer/multi-org-ca/acme
+				$ export CORE_PEER_FILESYSTEM_PATH="/var/ledgers/multi-org-ca/acme/acme.peer1/ledger"
+				
+				$ export CORE_PEER_LISTENADDRESS=localhost:7051
+				$ export CORE_PEER_ADDRESS=localhost:7051
+				$ export CORE_PEER_CHAINCODELISTENADDRESS=localhost:7052
+				$ export CORE_PEER_EVENTS_ADDRESS=localhost:7053
+				$ export CORE_PEER_GOSSIP_BOOTSTRAP=localhost:7051
+				$ export PEER_LOGS=/acme/acme.peer1/
+				
+				$ mkdir -p $PEER_LOGS
+			2. Fetch the genesis block
+				$ export $ORDERER_ADDRESS="localhost:7050"
+				$ peer channel fetch 0 -o $ORDERER_ADDRESS -c airlinechannel
+
+Step 10.2: Organization Admin execute Join channel for peer
+			$ peer channel join -o $ORDERER_ADDRESS -b airchannel_0.block
+
+Step 10.3: Check if the peer has joined any channel		
+			$ peer channel list
+
+
+
+-----------------------------------------------------------------------------------------------------------------------------
+------STEP 11-----------------------------Configuration Update Task--------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------	
+
+Step 11.1: Fetch the config from blockchain
+			$ export ORIGINAL_PB="./config/cfg_block.pb"
+			$ export ORIGINAL_CFG_JSON="./config/cfg_block.json"
+			$ export ORIGINAL_CFG_NO_ENVELOPE_JSON="./config/cfg_block_no_envelop.json"
+			$ export MOD_CFG_NO_ENVELOPE_JSON="./config/cfg_block_no_envelope_mod.json"
+			
+			$ peer channel fetch config $ORIGINAL_PB -c $CHANNEL_ID -o $ORDERER_ADDRESS
+
+Step 11.2: Convert to JSON
+			$ configtxlator proto_decode --input $ORIGINAL_PB --type common.block > $ORIGINAL_CFG_JSON
+			# Remove Envelope
+			$ ORIGINAL_CFG_JSON | jq .data.data[0].payload.data.config > $ORIGINAL_CFG_NO_ENVELOPE_JSON
+			# Creates a file by copying the original
+			$ cp $ORIGINAL_CFG_NO_ENVELOPE_JSON $MOD_CFG_NO_ENVELOPE_JSON
+
+Step 11.2: Modify config file
+			$ 
 
 
 
 
 
 
+__________________________________________________________GET FUNCTIONS EXPOSED BY THE SYSTEM CHAINCODE______________________________________________________________________________________________
+
+Convert genesis block to JSON
+	$
+Run the Script
+	$ ./block-json.sh acls
 
 
 
 
-
-
-
-
-
-
-
-
+	
