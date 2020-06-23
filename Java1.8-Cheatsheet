@@ -1,0 +1,50 @@
+//Java 1.8
+Java 8 provides following features for Java Programming:
+	1.Lambda expressions,
+	2.Method references,
+	3.Functional interfaces,
+	4.Stream API,
+	5.Default methods,
+	6.Base64 Encode Decode,
+	7.Static methods in interface,
+	8.Optional class,
+	9.Collectors class,
+	10.ForEach() method,
+	11.Parallel array sorting,
+	12.Nashorn JavaScript Engine,
+	13.Parallel Array Sorting,
+	14.Type and Repating Annotations,
+	15.IO Enhancements,
+	16.Concurrency Enhancements,
+	17.JDBC Enhancements etc.
+
+	
+	
+	IntConsumer Interface 
+	
+		The IntConsumer Interface is a part of the java.util.function package which has been introduced since Java 8, to implement functional programming in Java. It represents a function which takes in one int-valued argument but does not return any value.
+		
+		The lambda expression assigned to an object of IntConsumer type is used to define its accept() which eventually applies the given operation on its only argument.It is similar to using an object of type Consumer<Integer>
+		
+		
+        // Create a IntConsimer Instance 
+        IntConsumer display = a -> System.out.println(a * 10); 
+  
+        // Using accept() method 
+        display.accept(3); 
+		
+		//andThen()
+		//It returns a composed IntConsumer wherein the parameterized IntConsumer will be executed after the first one. If the evaluation of either operation //throws an error, it is relayed to the caller of the composed operation.
+		
+		try { 
+				// Create a IntConsimer Instance 
+				IntConsumer display = a -> System.out.println(a * 10); 
+				IntConsumer mul = a -> a *= 10; 
+  
+				// Using andThen() method 
+				IntConsumer composite = mul.andThen(display); 
+				composite.accept(3); 
+			catch (Exception e) { 
+					System.out.println("Exception : " + e); 
+			} 
+		}

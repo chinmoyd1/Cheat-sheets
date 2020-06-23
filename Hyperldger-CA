@@ -1,0 +1,231 @@
+//Start Fbric CA docker image
+fabric-ca-server:
+  image: hyperledger/fabric-ca:$$$$$$$$$$$$$$$$$$$
+  container_name: fabric-ca-server/fabric-server
+  ports:
+    - "7054:7054"
+  environment:
+    - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+	# - FABRIC_CA_SERVER_TLS_ENABLED=true
+    # - FABRIC_CA_SERVER_CSR_CN=ca-tls
+    # - FABRIC_CA_SERVER_CSR_HOSTS=0.0.0.0
+    # - FABRIC_CA_SERVER_DEBUG=true
+  volumes:
+    - "./fabric-ca-server:/etc/hyperledger/fabric-ca-server"
+  command: sh -c 'fabric-ca-server start -d -b admin:adminpw --port 7054' #--csr.hosts "fabric-ca-server"  #csr.hosts generates TLS also
+  networks:
+	- byfn
+	
+
+$ fabric-ca-server start -b admin:adminpw
+	fabric-server
+	└── msp
+	   ├── ca-cert.pem		# tls: signing certificate will be used to validate the other certificates recieved from fabric-server
+	   ├── IssuerPublicKey
+	   ├── IssuerRevocationPublicKey
+
+_______________________________________________________________________________________________________
+// Start CA client
+fabric-ca-client:
+    container_name: fabric-ca-client
+    image: hyperledger/fabric-ca-tools:$$$$$$$$$$$$$$$$$$
+    working_dir: /etc/hyperledger/fabric-ca-client
+    environment:
+      - FABRIC_CA_CLIENT_HOME=/etc/hyperledger/fabric-ca-client
+      - HOST=fabric-ca-server
+      - PORT=7055
+      - USERNAME=admin
+      - PASSWORD=adminpw
+    volumes:
+      - ./scripts:/etc/hyperledger/fabric-ca-client/scripts
+    command: sleep infinity
+    networks:
+      - byfn
+    depends_on:
+      - fabric-ca-server
+	  
+_______________________________________________________________________________________________________
+	  
+** Enroll CA’s Admin	 
+
+	$ export FABRIC_CA_CLIENT_TLS_CERTFILES=/tmp/hyperledger/tls-ca/crypto/ca-cert.pem
+	$ export FABRIC_CA_CLIENT_HOME=/tmp/hyperledger/ca/admin
+	
+	$ fabric-ca-client enroll -d -u https://admin:adminpw@0.0.0.0:7054
+	
+	└──ca
+		└── admin
+			├── fabric-ca-client-config.yaml
+			└── msp
+			   ├── IssuerPublicKey
+			   ├── IssuerRevocationPublicKey
+			   ├── cacerts
+			   │   └── 0-0-0-0-7054.pem
+			   ├── keystore
+			   │   └── 60b6a16b8b5ba3fc3113c522cce86a724d7eb92d6c3961cfd9afbd27bf11c37f_sk
+			   ├── signcerts
+			   │   └── cert.pem
+			   └── user
+	
+** Registering peers and orderers and admins
+	$ fabric-ca-client register -d --id.name peer1-org1 --id.secret peer1PW --id.type peer -u https://0.0.0.0:7054
+	$ fabric-ca-client register -d --id.name peer2-org1 --id.secret peer2PW --id.type peer -u https://0.0.0.0:7054
+	$ fabric-ca-client register -d --id.name peer1-org2 --id.secret peer1PW --id.type peer -u https://0.0.0.0:7054
+	$ fabric-ca-client register -d --id.name peer2-org2 --id.secret peer2PW --id.type peer -u https://0.0.0.0:7054
+	$ fabric-ca-client register -d --id.name orderer --id.secret ordererPW --id.type orderer -u https://0.0.0.0:7054
+	
+	$ fabric-ca-client register -d --id.name orderer.admin --id.secret pw --id.type admin --id.attrs "hf.Registrar.Roles=client,hf.Registrar.Attributes=*,hf.Revoker=true,hf.GenCRL=true,admin=true:ecert,abac.init=true:ecert" -u https://0.0.0.0:7054
+	
+	
+** Enroll Org1 Peer1
+	$ export FABRIC_CA_CLIENT_HOME=/tmp/hyperledger/org1/peer1
+	$ export FABRIC_CA_CLIENT_TLS_CERTFILES=/tmp/hyperledger/org1/peer1/assets/ca/org1-ca-cert.pem
+	$ fabric-ca-client enroll -d -u https://peer1-org1:peer1PW@0.0.0.0:7054	
+		
+	# fabric-ca-client enroll -d -u https://peer1-org1:peer1PW@0.0.0.0:7054 --enrollment.profile tls --csr.hosts peer1-org1 #to get TLS	
+		
+** Enroll Org1 Peer2
+	$ export FABRIC_CA_CLIENT_HOME=/tmp/hyperledger/org1/peer2
+	$ export FABRIC_CA_CLIENT_TLS_CERTFILES=/tmp/hyperledger/org1/peer2/assets/ca/org1-ca-cert.pem
+	$ fabric-ca-client enroll -d -u https://peer2-org1:peer2PW@0.0.0.0:7054
+
+	# fabric-ca-client enroll -d -u https://peer2-org1:peer2PW@0.0.0.0:7054 --enrollment.profile tls --csr.hosts peer2-org1
+
+** Enroll Org1’s Admin
+	$ export FABRIC_CA_CLIENT_HOME=/tmp/hyperledger/org1/admin
+	$ export FABRIC_CA_CLIENT_TLS_CERTFILES=/tmp/hyperledger/org1/peer1/assets/ca/org1-ca-cert.pem
+	$ export FABRIC_CA_CLIENT_MSPDIR=msp
+	$ fabric-ca-client enroll -d -u https://admin-org1:org1AdminPW@0.0.0.0:7054
+
+	mkdir /tmp/hyperledger/org1/peer1/msp/admincerts
+	cp /tmp/hyperledger/org1/admin/msp/signcerts/cert.pem /tmp/hyperledger/org1/peer1/msp/admincerts/org1-admin-cert.pem
+
+	/tmp/hyperledger/org1/msp
+	├── admincerts
+	│   └── admin-org1-cert.pem
+	├── cacerts
+	│   └── org1-ca-cert.pem
+	├── tlscacerts
+	│   └── tls-ca-cert.pem
+	└── users
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+** Launch Org1’s Peers
+
+	peer1-org1:
+	  container_name: peer1-org1
+	  image: hyperledger/fabric-peer
+	  environment:
+		- CORE_PEER_ID=peer1-org1
+		- CORE_PEER_ADDRESS=peer1-org1:7051
+		- CORE_PEER_LOCALMSPID=org1MSP
+		- CORE_PEER_MSPCONFIGPATH=/tmp/hyperledger/org1/peer1/msp
+		- CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+		- CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=guide_fabric-ca
+		- FABRIC_LOGGING_SPEC=debug
+		- CORE_PEER_TLS_ENABLED=false
+		# - CORE_PEER_TLS_CERT_FILE=/tmp/hyperledger/org1/peer1/msp/signcerts/cert.pem
+		# - CORE_PEER_TLS_KEY_FILE=/tmp/hyperledger/org1/peer1/msp/keystore/key.pem
+		# - CORE_PEER_TLS_ROOTCERT_FILE=/tmp/hyperledger/org1/peer1/msp/tlscacerts/tls-0-0-0-0-7054.pem
+		- CORE_PEER_GOSSIP_USELEADERELECTION=true
+		- CORE_PEER_GOSSIP_ORGLEADER=false
+		- CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1-org1:7051
+		- CORE_PEER_GOSSIP_SKIPHANDSHAKE=true
+	  working_dir: /opt/gopath/src/github.com/hyperledger/fabric/org1/peer1
+	  volumes:
+		- /var/run:/host/var/run
+		- /tmp/hyperledger/org1/peer1:/tmp/hyperledger/org1/peer1
+	  networks:
+		- fabric-ca
+	
+	
+	peer2-org1:
+	  container_name: peer2-org1
+	  image: hyperledger/fabric-peer
+	  environment:
+		- CORE_PEER_ID=peer2-org1
+		- CORE_PEER_ADDRESS=peer2-org1:7051
+		- CORE_PEER_LOCALMSPID=org1MSP
+		- CORE_PEER_MSPCONFIGPATH=/tmp/hyperledger/org1/peer2/msp
+		- CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+		- CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=guide_fabric-ca
+		- FABRIC_LOGGING_SPEC=grpc=debug:info
+		#- CORE_PEER_TLS_ENABLED=true
+		#- CORE_PEER_TLS_CERT_FILE=/tmp/hyperledger/org1/peer2/tls-msp/signcerts/cert.pem
+		#- CORE_PEER_TLS_KEY_FILE=/tmp/hyperledger/org1/peer2/tls-msp/keystore/key.pem
+		#- CORE_PEER_TLS_ROOTCERT_FILE=/tmp/hyperledger/org1/peer2/tls-msp/tlscacerts/tls-0-0-0-0-7054.pem
+		- CORE_PEER_GOSSIP_USELEADERELECTION=true
+		- CORE_PEER_GOSSIP_ORGLEADER=false
+		- CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer2-org1:7051
+		- CORE_PEER_GOSSIP_SKIPHANDSHAKE=true
+		- CORE_PEER_GOSSIP_BOOTSTRAP=peer1-org1:7051
+	  working_dir: /opt/gopath/src/github.com/hyperledger/fabric/org1/peer2
+	  volumes:
+		- /var/run:/host/var/run
+		- /tmp/hyperledger/org1/peer2:/tmp/hyperledger/org1/peer2
+	  networks:
+		- fabric-ca
+	
+-----------------------------------------------------------------------------------------------------------------------------------------------
+** Enroll Orderer
+
+	$ export FABRIC_CA_CLIENT_HOME=/tmp/hyperledger/orderer
+	$ export FABRIC_CA_CLIENT_TLS_CERTFILES=/tmp/hyperledger/orderer/assets/ca/orderer-ca-cert.pem
+	$ fabric-ca-client enroll -d -u https://orderer:ordererPW@0.0.0.0:7054	
+	
+	# export FABRIC_CA_CLIENT_MSPDIR=tls-msp
+	# export FABRIC_CA_CLIENT_TLS_CERTFILES=/tmp/hyperledger/orderer/assets/tls-ca/tls-ca-cert.pem
+	# fabric-ca-client enroll -d -u https://orderer:ordererPW@0.0.0.0:7054 --enrollment.profile tls --csr.hosts orderer	
+	
+	
+** Enroll orderer's admin
+
+	$ export FABRIC_CA_CLIENT_HOME=/tmp/hyperledger/orderer/admin
+	$ export FABRIC_CA_CLIENT_MSPDIR=msp
+	$ fabric-ca-client enroll -d -u https://orderer.admin:pw@0.0.0.0:7054
+	
+	$ mkdir /tmp/hyperledger/orderer/msp/admincerts
+	$ cp /tmp/hyperledger/orderer/admin/msp/signcerts/cert.pem /tmp/hyperledger/orderer/msp/admincerts/orderer-admin-cert.pem
+
+	/tmp/hyperledger/orderer/msp
+	├── admincerts
+	│   └── admin-orderer-cert.pem
+	├── cacerts
+	│   └── orderer-ca-cert.pem
+	├── tlscacerts
+	│   └── tls-ca-cert.pem
+	└── users
+
+-----------------------------------------------------------------------------------------------------------------------------------------------
+** Launching orderer	
+
+	orderer:
+	  container_name: orderer
+	  image: hyperledger/fabric-orderer
+	  environment:
+		- ORDERER_HOME=/tmp/hyperledger/orderer
+		- ORDERER_HOST=orderer
+		- ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+		- ORDERER_GENERAL_GENESISMETHOD=file
+		- ORDERER_GENERAL_GENESISFILE=/tmp/hyperledger/orderer/genesis.block
+		- ORDERER_GENERAL_LOCALMSPID=ordererMSP
+		- ORDERER_GENERAL_LOCALMSPDIR=/tmp/hyperledger/orderer/msp
+		#- ORDERER_GENERAL_TLS_ENABLED=true
+		#- ORDERER_GENERAL_TLS_CERTIFICATE=/tmp/hyperledger/orderer/tls-msp/signcerts/cert.pem
+		#- ORDERER_GENERAL_TLS_PRIVATEKEY=/tmp/hyperledger/orderer/tls-msp/keystore/key.pem
+		#- ORDERER_GENERAL_TLS_ROOTCAS=[/tmp/hyperledger/orderer/tls-msp/tlscacerts/tls-0-0-0-0-7054.pem]
+		#- ORDERER_GENERAL_LOGLEVEL=debug
+		- ORDERER_DEBUG_BROADCASTTRACEDIR=data/logs
+	  volumes:
+		- /tmp/hyperledger/orderer:/tmp/hyperledger/orderer/
+	  networks:
+		- fabric-ca	
+	
+	
+	
+	
+	
+	
+	
+	
+	

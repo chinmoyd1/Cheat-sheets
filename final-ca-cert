@@ -1,0 +1,187 @@
+1.  Strat the intermediate CA
+		fabric-ca-server start -b admin:adminpw
+			> ca-cert.pem
+			> ca-key.pem
+
+2.  Enroll CA client
+		HOME_DIR=/etc/hyperledger/fabric-ca-server/fabric-ca-files										
+		export FABRIC_CA_CLIENT_HOME=$HOME_DIR/caAdmin -----------------------------------------------------
+		
+		fabric-ca-client enroll -u https://admin:adminpw@ca:7054
+		
+3.  Enroll the root CA administrator
+		fabric-ca-client enroll -u https://admin:adminpw@ca:7054
+			> cert.pem
+			> key.pem
+-----------------------------------orderer------------------------------------------------------
+4.  Register Orderers
+		ORDERER_ADMIN_ID=Admin@example.com
+		ORDERER_ADMIN_PW=pw
+
+		ORDERER_ID=orderer.example.com
+		ORDERER_PW=pw
+		
+		fabric-ca-client register --id.secret $ORDERER_PW --id.name $ORDERER_ID --id.type orderer --id.affiliation org1
+
+5.  Registering Orderer Admin	
+		fabric-ca-client register --id.secret $ORDERER_ADMIN_PW --id.name $ORDERER_ADMIN_ID --id.type client --id.affiliation org1 --id.attrs admin=true:ecert
+
+6.  Getting ca cert
+		fabric-ca-client getcacert -u https://ca:7054 -M $HOME_DIR/example.com/msp --id.type client --id.affiliation org1
+	
+7.  Creating tlscacerts by copying cacerts (MSP)
+		mkdir $HOME_DIR/example.com/msp/tlscacerts
+		cp $HOME_DIR/example.com/msp/cacerts/* $HOME_DIR/example.com/msp/tlscacerts
+
+8.  Enroll Orderer Admin
+		export FABRIC_CA_CLIENT_HOME=$HOME_DIR/example.com/admin ------------------------------------------------------
+		fabric-ca-client enroll -u http://ORDERER_ADMIN_ID:ORDERER_ADMIN_PW@ca:7054 --id.affiliation org1
+
+9.  Creating domain admincerts by copying signcerts (MSP)
+		dstDir=$HOME_DIR/example.com/msp/admincerts
+		mkdir -p $dstDir
+		cp  $HOME_DIR/example.com/admin/msp/signcerts/* $dstDir
+
+10. Creating admin's admincerts by copying signcerts (MSP)
+		dstDir=$HOME_DIR/example.com/admin/msp/admincerts
+		mkdir -p $dstDir
+		cp $HOME_DIR/example.com/admin/msp/signcerts/* $dstDir
+	
+
+11. Enrolling Orderer TLS
+		export FABRIC_CA_CLIENT_HOME=$HOME_DIR/example.com/orderer ------------------------------------------------------
+		fabric-ca-client enroll --enrollment.profile tls -u https://orderer.example.com:pw@ca:7054 -M $HOME_DIR/example.com/orderer/tls --csr.hosts orderer --id.affiliation org1
+
+12. Creating Orderer TLS key and cert by copying keystore and signcert
+		cp $HOME_DIR/example.com/orderer/tls/keystore/* $HOME_DIR/example.com/orderer/tls/server.key
+		cp $HOME_DIR/example.com/orderer/tls/signcerts/* $HOME_DIR/example.com/orderer/tls/server.crt
+
+13. Creating Orderer root ca cert by copiny ca-chain.pem if intermediate ca exists (Intermediate Chain)
+		cp -rf /etc/hyperledger/fabric-ca-server/ca/middleCa/ca-chain.pem $HOME_DIR/example.com/orderer/tls/ca.crt
+
+14. Enrooling Orderer MSP
+		fabric-ca-client enroll -u https://$ORDERER_ADMIN_ID:$ORDERER_ADMIN_PW@ca:7054 -M $HOME_DIR/example.com/orderer/msp --id.affiliation org1
+		
+15. Creating Orderer tlscaert by copying cacert (MSP)
+		mkdir $HOME_DIR/example.com/orderer/msp/tlscacerts
+		cp $HOME_DIR/example.com/orderer/msp/cacerts/* $HOME_DIR/example.com/orderer/msp/tlscacerts
+
+16. Creating Orderer's admincerts by copying signcerts (MSP)
+		dstDir=$HOME_DIR/example.com/orderer/msp/admincerts
+		mkdir -p $dstDir
+		cp $HOME_DIR/example.com/admin/msp/signcerts/* $dstDir
+
+-----------------------------------org1------------------------------------------------------
+17. Registering Peer0.Org1
+		fabric-ca-client register --id.secret pw --id.name peer0.org1.example.com --id.type peer --id.affiliation org1
+
+18. Registering Peer1.Org1
+		fabric-ca-client register --id.secret pw --id.name peer1.org1.example.com --id.type peer --id.affiliation org1
+
+19. Registering Users and Admin for Peers
+		PEER_ADMIN_ID=Admin@org1.example.com
+		PEER_ADMIN_PW=pw
+		PEER_ID=user@org1.example.com
+		PEER_PW=pw		
+		fabric-ca-client register --id.secret pw --id.name Admin@org1.example.com --id.type client --id.affiliation org1		
+		fabric-ca-client register --id.secret pw --id.name user@org1.example.com --id.type client --id.affiliation org1
+
+20. Getting cacerts for peers 
+		fabric-ca-client getcacert -u http://ca:7054 -M $HOME_DIR/org1.example.com/msp
+
+21. Creating tlscerts by copying cacerts
+		mkdir $HOME_DIR/org1.example.com/msp/tlscacerts
+		cp $HOME_DIR/org1.example.com/msp/cacerts/* $HOME_DIR/org1.example.com/msp/tlscacerts
+
+22. Enrolling Admin of Org1
+		export FABRIC_CA_CLIENT_HOME=$HOME_DIR/org1.example.com/admin ------------------------------------------------------	
+		fabric-ca-client enroll -u https://$PEER_ADMIN_ID:$PEER_ADMIN_PW@ca:7054 --id.affiliation org1
+
+23. Cretaing admincerts for organization and admin by copying organizations signcerts
+		dstDir=$HOME_DIR/org1.example.com/admin/msp/admincerts
+		mkdir -p $dstDir
+		cp $HOME_DIR/org1.example.com/admin/msp/signcerts/* $dstDir
+		
+
+		dstDir=$HOME_DIR/org1.example.com/msp/admincerts
+		mkdir -p $dstDir
+		cp $HOME_DIR/org1.example.com/admin/msp/signcerts/* $dstDir
+
+24.	Enrolling User of Org1 
+		export FABRIC_CA_CLIENT_HOME=$HOME_DIR/org1.example.com/user ------------------------------------------------------	
+		fabric-ca-client enroll -u https://user@org1.example.com:pw@ca:7054 --id.affiliation org1
+
+-----------------------------------peer0------------------------------------------------------
+25.	Enrolling peer0 of Org1
+	    export FABRIC_CA_CLIENT_HOME=$HOME_DIR/org1.example.com/peer0 ------------------------------------------------------	
+        LP_PEER_ID=peer0.org1.example.com
+        LP_PEER_PW=pw
+		fabric-ca-client enroll --enrollment.profile tls -u https://LP_PEER_ID:LP_PEER_PW@ca:7054 -M $HOME_DIR/org1.exampl.com/peer0/tls --csr.hosts peer0.org1.service --id.affiliation org1
+
+26. Creating Peer0 Org1 TLS key and cert by copying keystore and signcert
+		cp $HOME_DIR/org1.example.com/peer0/tls/keystore/* $HOME_DIR/org1.example.com/peer0/tls/server.key
+		cp $HOME_DIR/org1.example.com/peer0/tls/signcerts/* $HOME_DIR/org1.example.com/peer0/tls/server.crt
+	
+27.	Creating Peer0 Org1 root ca cert by copiny ca-chain.pem if intermediate ca exists (Intermediate Chain)	
+		cp -rf /etc/hyperledger/fabric-ca-server/ca/middleCa/ca-chain.pem $HOME_DIR/org1.example.com/peer0/tls/ca.crt
+	
+28.	Enrooling Peer MSP of Peer0
+		fabric-ca-client enroll -u https://peer0.org1.example.com:pw@ca:7054 -M $HOME_DIR/org1.example.com/peer0/msp --id.affiliation org1
+
+29. Creating Peer0 Org1 tlscaert by copying cacert (MSP)	
+		mkdir $HOME_DIR/org1.example.com/peer0/msp/tlscacerts
+		cp $HOME_DIR/org1.example.com/peer0/msp/cacerts/* $HOME_DIR/org1.example.com/peer0/msp/tlscacerts
+
+30.	Creating Peer0 Org1 admincerts by copying signcerts (MSP)
+		dstDir=$HOME_DIR/org1.example.com/peer0/msp/admincerts
+		mkdir -p $dstDir
+		cp $HOME_DIR/org1.example.com/admin/msp/signcerts/* $dstDir
+
+
+----------------------------Build Final Path----------------------------------------------------
+
+1. Copy admin and msp crypto to ordererOrganizations
+		CONFIGPATH=/etc/hyperledger/fabric-ca-server/crypto-config
+		mkdir -p $CONFIGPATH
+
+		mkdir -p $CONFIGPATH/ordererOrganizations/example.com/users/Admin@example.com
+		mkdir -p $CONFIGPATH/ordererOrganizations/example.com/msp
+
+		cp -rf $HOME_DIR/example.com/admin/* $CONFIGPATH/ordererOrganizations/example.com/users/Admin@example.com
+		cp -rf $HOME_DIR/example.com/msp/* $CONFIGPATH/ordererOrganizations/example.com/msp
+
+
+2. Copy Ordrer TLS cert
+		mkdir -p $CONFIGPATH/ordererOrganizations/example.com/orderers/orderer.example.com
+		cp -rf $HOME_DIR/example.com/orderer/* $CONFIGPATH/ordererOrganizations/example.com/orderers/orderer.example.com
+		# cp $CONFIGPATH/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlsintermediatecerts/ca-intermediate-7054.pem $CONFIGPATH/ordererOrganizations/example.com/orderers/orderer.example.com/tls/ca.crt  
+
+
+3. 	Copy Users and org's MSP
+		mkdir -p $CONFIGPATH/peerOrganizations/org1.example.com/users/Admin@org1.example.com
+		mkdir -p $CONFIGPATH/peerOrganizations/org1.example.com/msp
+		cp -rf $HOME_DIR/org1.example.com/admin/* $CONFIGPATH/peerOrganizations/org1.example.com/users/Admin@org1.example.com
+		cp -rf $HOME_DIR/org1.example.com/msp/* $CONFIGPATH/peerOrganizations/org1.example.com/msp
+
+4.  Copy Peer files 
+		mkdir -p $CONFIGPATH/peerOrganizations/org1.example.com/peers/peer0.org1.example.com
+        cp -rf $HOME_DIR/org1.example.com/peer0/* $CONFIGPATH/peerOrganizations/org1.example.com/peers/peer0.org1.example.com
+        # cp $CONFIGPATH/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/msp/tlsintermediatecerts/ca-intermediate-7054.pem $CONFIGPATH/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt
+
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

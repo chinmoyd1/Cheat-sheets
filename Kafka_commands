@@ -1,0 +1,43 @@
+//Kafka commands
+
+//running zookeeper
+zkserver
+
+//running kafka
+.\bin\windows\kafka-server-start.bat .\config\server.properties
+
+//creating topic
+kafka-topics.bat --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic notifications
+
+//creating producer
+kafka-console-producer.bat --broker-list localhost:9092 --topic notifications
+
+//creating consumer
+kafka-console-consumer.bat --bootstrap-server localhost:9092 --topic notifications --from-beginning
+
+//creating mongodb base path in current project folder
+mongod --sdpath=.
+
+docker run -d --name zookeeper --network kafka-net zookeeper:latest
+
+ ./bin/kafka-topics.sh --zookeeper localhost:2181 --list
+ ./bin/kafka-topics.sh --zookeeper localhost:2181 --describe --topic remove-me
+ ./bin/kafka-topics.sh --zookeeper localhost:2181 --delete --topic remove-me
+
+
+Step 1: Strat zookeeper
+	> bin/zkServer.sh start
+
+Step 2: Start Kafka
+	> bin/zookeeper-server-start.sh config/zookeeper.properties
+
+Step 3: Create Topic
+	> bin/kafka-topics.sh --create --bootstrap-server localhost:9092 --replication-factor 1 --partitions 1 --topic test
+	> bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+	
+Step 4: Send some messages
+	> bin/kafka-console-producer.sh --broker-list localhost:9092 --topic test
+	
+Step 5: Start a consumer
+	> bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic test --from-beginning
+	

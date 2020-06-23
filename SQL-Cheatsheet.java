@@ -5,16 +5,6 @@ CREATE TABLE NAMES(Id integer PRIMARY KEY, Name text);
 /* Create few records in this table */
 INSERT INTO NAMES VALUES(1,'Tom');
 INSERT INTO NAMES VALUES(6,'Tom');
-INSERT INTO NAMES VALUES(7,'Tom');
-INSERT INTO NAMES VALUES(8,'Tom');
-INSERT INTO NAMES VALUES(2,'Lucy');
-INSERT INTO NAMES VALUES(3,'Frank');
-INSERT INTO NAMES VALUES(4,'Jane');
-INSERT INTO NAMES VALUES(89,'Jane');
-INSERT INTO NAMES VALUES(90,'Jane');
-INSERT INTO NAMES VALUES(23,'Jane');
-INSERT INTO NAMES VALUES(5,'Robert');
-COMMIT;
 
 //listing all duplicates
 SELECT Name, COUNT(Name) FROM NAMES
@@ -38,3 +28,9 @@ AND obi.obi_key = oiu.obi_key AND obj.OBJ_KEY = obi.OBJ_KEY
 AND oiu.OST_KEY = ost.OST_KEY AND OBJ.obj_key = 246 
 order by USR_LOGIN DESC) 
 result WHERE ROWNUM <= 50 ) WHERE RNUM >= 1;
+
+
+// Postgres
+ \l  --> list all databases
+ \dt --> list all tables
+ \c --> change database
