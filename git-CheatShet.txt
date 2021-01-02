@@ -18,6 +18,8 @@
 	$ git checkout <Branch_name>
 	$ git branch
 	
+	$ git checkout --track origin/newsletter
+	
 //Creating new branch and pushing it to remote repo
 	$ git checkout -b Branch1
 	$ git add <filename>
@@ -29,6 +31,14 @@
 	$ git pull origin master
 	$ git merge <branch>
 	$ git push origin master
+	
+	$ git clone -b camera-list https://vivekn-wobot@bitbucket.org/vivekn-wobot/playback.git
+
+// Squashing multiple changes in one	
+	$ git rebase -i HEAD~10
+	<change pick to s, only retain the first pick>
+	<Then change the messages accordingly>
+	$ git push origin demo -f
 	
 //Rebaseing to master branch
 	$ git checkout master
@@ -59,7 +69,56 @@
 	$ git push origin branchName
 	
 //Delete remote branch
-git push origin --delete test
+	$ git push origin --delete test
 
 //Delete local branch
-git branch -d test
+	$ git branch -d test
+
+
+// Unstage a file
+	$ git reset HEAD *
+// *******Unstage and keeps in staging area
+	$ git reset --soft HEAD~1
+// Unstage and keeps in working area
+	$ git reset --mixed HEAD~1
+// Unstage and revert those changes from working tree(changes wont be present in file)
+	$ git reset --hard HEAD~1
+// Remove commit from local repo (to be used only when commit is local not remote)
+	$ git reset HEAD~1
+	
+// Revert commit from remote
+	$ git revert 65rewgrj7
+// Revert multiple commits
+	$ git revert --no-commit most_recent_commit 2nd_most_recent_commit 3rd_most_recent etc..
+	$ git commit -m "back to commit 1"
+
+// Stash
+	$ git stash save "impCahnge"
+	$ git stash pop
+	$ git stash list
+	$ git stash drop
+
+// Tag
+// Create Taggit 
+	$ git tag v1.0
+// Create anotated tag
+	$ git tag -a v1.1 -m "tag for release ver 1.1"
+// View tags
+	$ git tag
+	$ git show v1.0
+	$ git show -l v1.*
+// Push tag to remote
+	$ git push origin v1.0
+	$ git push --tags  // to push all tags
+// Delete Tag from local
+	$ git tag -d v1.0
+// Delete Tag from remte
+	$ git push origin -d v1.0
+// Create Branch from a tag and checkout the branch
+	$ git checkout -b ReleaseVer1 v1.0
+// Create tag from past commit 
+	$ git tag v1.3 5fuy6576
+	$ git push origin v1.3
+	
+	
+	

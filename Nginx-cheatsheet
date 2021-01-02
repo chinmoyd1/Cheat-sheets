@@ -1,0 +1,96 @@
+
+
+
+Error log for nginx:
+	/var/log/nginx/error.log
+
+
+
+Debian/Ubuntu/RHEL/CentOS Linux
+Linux restart Nginx webserver, run:
+# /etc/init.d/nginx restart
+OR
+# /etc/init.d/nginx reload
+
+One can use the service command for sysv init based systems:
+# service nginx restart
+OR
+# service nginx reload
+
+If you are using systemd based Linux distro:
+$ sudo systemctl restart nginx
+OR
+$ sudo systemctl reload nginx
+
+To view status:
+# service nginx status
+OR
+$ sudo systemctl status nginx
+
+//Test nginx config
+$ nginx -t
+
+
+//demo config
+server {
+    root /www/data;
+
+    location / {
+    }
+
+    location /images/ {
+    }
+
+    location ~ \.(mp3|mp4) {
+        root /www/media;
+    }
+}
+
+// Parent config
+vi /etc/nginx/nginx.conf
+
+// server config
+// vi /etc/nginx/conf.d/default.conf
+server {
+    listen 80;
+    server_name _;
+
+    location /playback/ {
+
+        root /usr/src/cameras;
+
+        add_header Cache-Control no-cache;
+
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Expose-Headers' 'Content-Length';
+
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' '*';
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain charset=UTF-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+    }
+    location /download/ {
+
+        root /usr/src/cameras;
+
+        add_header Cache-Control no-cache;
+
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Expose-Headers' 'Content-Length';
+
+        if ($request_method = 'OPTIONS') {
+            add_header 'Access-Control-Allow-Origin' '*';
+            add_header 'Access-Control-Max-Age' 1728000;
+            add_header 'Content-Type' 'text/plain charset=UTF-8';
+            add_header 'Content-Length' 0;
+            return 204;
+        }
+    }
+
+}
+
+// Giving permission to nginx of directory
+setfacl -R -m d:u:nginx:rwx /usr/src/cameras

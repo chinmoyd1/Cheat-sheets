@@ -92,6 +92,28 @@ app.use(express.urlencoded({ extended: true })); // will set to req.body propert
 // for serving static files
 app.use(express.static('public'));
 
+// for passing values in middlewear
+app.get('/test', 
+  function(req, res, next) { 
+    res.locals.custom   = true;
+    res.locals.myObject = { hello: 1 };
+    next(); 
+  }, 
+  function(req, res) { 
+    console.log('See:', res.locals.custom, res.locals.myObject); 
+    return res.status(200).send(res.locals); 
+  });
+  
+// Middlewear Error Hndling
+app.get('/', function(req, res){
+	var err = new Error("Something went wrong");
+	next(err);
+});
+
+app.use(funtion(err, req, res, next){
+	res.status(500);
+	res.send("Oops, something went wrong.");
+});
 
 // ========================Connecting-to-MONGO============================
 // Schema Types: String, Number, Date, Buffer, Boolean, ObjectID, Array
@@ -294,6 +316,266 @@ id.getTimeStamp();
 
 // check Id validity
 mongoose.Types.ObjectId.isValid((req.body.customerId))
+
+
+
+
+
+// Mongo
+0. Is mongoose ORM
+1. Middlewear in mongoose for encrypting password?
+	Schema.pre
+2. Frawn mechanism
+3. sort on basis of casesensetive
+4. triggers
+5. normalized and denormalized
+6. join in MongoDB
+7. what does objectId consists of
+8. mongo aggregation
+9. pre-save hooks
+
+// ================================================= Child Process ===================================================
+// Start a new child process
+	// Async versions
+	child_process.spawn(command, [args], {options})
+	child_process.exec(command, {options}, callback)
+	child_process.execFile(file, [args], {options}, callback)
+	child_process.fork(modulePath, [args], {options})
+
+	// Sync versions
+	child_process.spawnSync()
+	child_process.execSync()
+	child_process.execFileSync()
+	
+// Events in child_process
+	"data" => output of stdout stream
+	"close" => when stdio streams close
+	"disconnected" => after child.disconnect() is called by parent
+	"error" => when error occurs(no spawn, cannot kill, message from parent failed)
+	"message" => when process.send() is called by child
+	"exit" => when process ends
+
+// Functions
+	child.disconnect()
+	child.kill([signal])
+	child.send(message, handle, options, callback)
+
+// Properties
+	child.connected
+	child.channel
+	child.pid
+	child.stdin
+	child.stdout
+	child.stderr
+	child.stdio
+	
+//  {Options}
+	cwd 		<string> Current working directory  of the child process
+	env 		<Object> Environment key-value pairs
+	argv0		<string> Explicitly set the value of argv[0] sent to the child process.
+	stdio 		<Array> | <string> Child's stdio configuration. ("pipe", "ignore", "inherit")
+	detached 	<boolean> prepare child to run independently of its parent process.
+	uid			<number> Sets the user identity of the process.
+	gid			<number> Sets the group identity of the process.
+	shell		<boolean> | <string> If true, runs commnd inside shell.
+
+	var cp = require("child_proces");
+	var progs = {
+		list: "ls",
+		copy: "cp",
+		folder: "mkdir"
+	}
+	// Stream, it is printing but it is printing in the child process stream, 
+	// hence you wont be able to see in main process
+	var child = cp.spawn(progs.list, ["-a"], {cwd:".."}); // or cp.spawn(progs.list)
+	// to make it visible in parent process
+	child.stout.on("data", (data) => {
+		console.log(data);
+	});
+	child.stderr.on("data", (err) => {
+		console.log(err);
+	});
+	child.on("exit", () => {
+		console.log("Process finished");
+	});
+	
+	var child = cp.exec(progs.remove + "-r css", {cwd:".."}, (error, stdout, stderr) => { // cp.exec(progs.remove + "-r css")
+		if(error){
+			console.err(error.name,error.message, erroe.stack);
+		} else {
+			console.log(stdout);
+		}
+	});
+	
+	var child = cp.execFile("ls", ["-a", "-l"], {cwd:".."}, (error, out, err) => {
+		if(error){
+			throw error;
+		} else {
+			console.log(out);
+		}
+	});
+	
+	var child = cp.fork("xyz.js", [args], {cwd: "./modules"});
+	
+	child.on("exit", () => {
+		console.log("child terminated");
+	});
+	
+// Messaging 
+	// Parent
+	const cp = require('child_process');
+	const path = require('path');
+	
+	const names = ["duly", "bonheur", "boidam", "adrian"];
+	
+	var child = cp.fork("forkchild.js", names);
+	
+	child.on("message", (data) => {
+		console.log(`parent received ${data}`);
+	});
+	child.on("exit", () => {
+		console.log("child terminated!");
+	});
+	
+	let interval = setInterval(() => {
+		child.send({name:"duly", age:"30", city:"Naples"});
+	}, 1000);
+	
+	setTimout(() => {
+		clearInterval(interval);
+		child.kill();
+	}, 5000);
+	
+	// Child (forkchild.js)
+	var data = process.argv.slice(2);
+	function sayHello(names) {
+		names.forEach((name) => {
+			process.send(`Greetings ${name}`);
+		});
+	};
+	sayHello(data);
+	
+	process.on("message", (userData) => {
+		console.dir(userData, {colors:true});
+	});
+	
+// ======================================== Worker Thredas ===========================================
+ 
+const {Worker, isMainThread, parentPort} = require('worker_threads');
+if(isMainThread) {
+	// This code is executed in the main thread
+	const worker = new Worker(__filename);
+	// Listen for message from the worker and print them.
+	worker.on('message', (msg) => {console.log(msg); });
+} else {
+	// This code is executed in the worker thread	
+	// Send a message to thr main thread
+	parentPort.postMessage('Hello World!');
+}
+// -----------------------------------------------------------------------------------------------------
+// Industrial uses
+// app.js
+const app = require('express')();
+const { Worker,isMainThread } = require('worker_threads');
+let id = 0;
+function createWorker({id, data}) {
+	return new Promise((resolve, reject) => {
+		if (isMainThread) {
+			const worker = new Worker('./worker.js', { workerData: {id: id, data: data} });
+			
+				worker.on('message', (data) => {
+					console.log('Processed output:', data);
+					resolve();
+				});
+				
+				worker.on('error', (error) => {
+					console.log('Got error');
+					reject();
+				});
+				
+				worker.on('exit', (data) => {
+					reject();
+				});
+		}
+	});
+}
+
+app.post('/', (req, res) => {
+	createWorker({ id: id++, data: req.body });
+	return res.staus(200).send('Data recieved');
+});
+
+// worker.js
+const { parentPort, isMainThread, workerData } = require('worker_threads');
+
+if (!isMainThread) {
+	console.log("Inside thread", workerData.id);
+	
+	const parsedJSON = JSON.parse(workerData.data);
+	// Fetch data from S3 and creates thumbnail
+	parentPort.postMessage(parsedJSON);
+}
+	
+
+// ============================================= Buffer, Streams, Pipes ===============================================
+var fs = require('fs');
+// Here we are storing the entire thing in a buffer, it is bad because we are using the same memory space as JS engine
+// Buffers: temporary chunks of data that we create to transport
+// synchronous
+var data = fs.readFileSync(__dirname + '/data.txt', 'utf8');
+console.log(data);
+
+// asynchronous
+var data2 = fs.readFile(__dirname + '/data.txt', 'utf8',
+	function(err, data){
+		console.log(data);
+	}
+);
+
+// Solution to above problem
+// Streams: sequence of data which contains buffer
+var readableStream = fs.createReadStream(__dirname + '/data.txt', {encodeing: 'utf8'});
+var writableStream = fs.createWriteStream(__dirname + '/data2.txt');
+
+readableStream.on('data', function(dataChunk){
+	console.log(dataChunk);
+	writablStream.write(dataChunk);
+});
+// or
+readbleStream.pipe(writablStream);
+
+// ============================= Cluster =======================================
+var cluster = require('cluster');
+
+if (cluster.isMaster) {
+	let cpuCount = require('os').cpus().length;
+	
+	for (let i=0; i<cpuCount; i+=1) {
+		cluster.fork();
+	}
+	
+	cluster.on('exit', function() {
+		cluster.fork();
+	});
+} else {
+	// do some work spin up a server
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

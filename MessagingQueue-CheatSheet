@@ -1,0 +1,99 @@
+Kafka 
+	1. High throughput with data guarantees
+	2. Massive scale
+	3. Ability to replay events as it is a log based system.
+	4. De-facto standard for streaming platform
+	5. Supports strict ordering within a partition not across topic.
+	6. Supports joint streming across multiple topics. 
+	   (To join 2 or more streams you have to ensure underlying topic has exactly the same partition and also same key)
+Disadvantages:
+	1. Requires a sperate consensus mechanism zookeeper cluster
+	2. Requires meticulous planning to select partition count
+	3. Everything is log based. So, storage management overheads
+	4. Careful coordination needed between teams writing consumer groups and producers
+	   (A topic has partitions, The consumer group can scale max upto the number of partitions)
+	   Number of partitions = Number of consumers (Parallelism)
+	5. Straming API support restricted mainly to java.
+	6. No out of box solution for upgrade.
+	
+RabbitMQ
+	1. Ships with a dashboard
+	2. Powerful routing capabilities (Exchange, Bindings)
+	3. Cluster rolling upgrade via feature flag (minor version no need to stop cluster)
+	4. Easy to get Started
+	5. Lower operational cost(in terms of hardware)
+	6. Cant replay events
+	7. Decoupled producers and consumers (using exchanges)
+	8. Consumer independently brings their own queue that binds to exchanges
+	9. Consuming applications don't need to process messages that aren't relevant
+Disadvantages:
+	1. Queues are single threded (throughput is limited to throughput of the thread).
+	2. Scaling brokers >3 becomes complicated and can have negative performance impacts
+	3. No events replay
+	
+	Excahnges:
+		1. Direct Exchange: Delivers messages to queue when the message routing key exactly matches the queue's binding key.		
+		2. Topic Exchange: Delivers messages to queues when the wildcard matches between the routing key and the queue's binding key.
+		3. Fanout Excahnge: Delivers messages to all queues regardless of routing keys or pattern matching.
+ 
+	Clustering:
+		1. Message queue by default resides on one node but they are visible and reachable from all the nodes.
+		2. RabitMQ 3.8 has quorum queues which allows to replicate those queues using raft as a consensus algorithm.
+ 
+ 
+ 
+ 
+ // RabbitMQ (AMQ Prrotocol)
+ 
+			---------TCP--------					    --------TCP-------
+			|	<--Channel1--> |	   port: 5672	    |  <--Channel1--> |
+ PUBLISHER 	|	<--Channel2--> |     RabbitMQ Server    |  <--Channel2--> | CONSUMER
+			|	<--Channel3--> |	 Exchange Queues    |  <--Channel3--> |
+			---------TCP--------        Broker          ---------TCP-------
+ 
+ 
+			
+ // Run Docker image for RabitMQ
+docker run --name rabbitmq -p 5672:5672 rabbitmq
+ 
+ // Node js
+ // publisher.js
+const amqp = require("amqplib");
+
+const msg = {number: 19};
+
+async function connect() {
+	try {		
+		const connection = await amqp.connect("amqp://localhost:5672");
+		const channel = await connection.createChannel();
+		
+		// It will create a queue if it doesn't exists
+		const result = await channel.assertQueue("jobs");
+		channel.sendToQueue("jobs", Buffer.from(JSON.stringify(msg)));
+		console.log(`Job sent successfully ${msg}`);
+	} catch (ex) {
+		console.error(ex);
+	}
+};
+
+connect();
+
+ // Consumer.js
+const amqp = require("amqplib");
+
+async function connect() {
+	try {
+		const connection = await amqp.connect("amqp://localhost:5672");
+		const channel = await connection.createChannel();
+		const result = await channel.assertQueue("jobs");
+		
+		channel.consume("jobs", message => {
+			let input = JSON.parse(message.constent.toString());
+			console.log(`Job recieved successfully ${input}`);
+			channel.ack(message);
+		});
+	} catch (ex) {
+		console.error(ex);
+	}
+};
+connect();

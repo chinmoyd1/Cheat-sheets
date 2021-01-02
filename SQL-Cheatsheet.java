@@ -34,3 +34,14 @@ result WHERE ROWNUM <= 50 ) WHERE RNUM >= 1;
  \l  --> list all databases
  \dt --> list all tables
  \c --> change database
+ 
+// Delete Duplicates form table
+WITH employeeCTE AS (
+	SELECT *, ROW_NUMBER() OVER(PARTITION BY AadharNumber ORDER BY AadharNumber as RowNumber)
+	FROM employee
+)
+DELETE FROM employeeCTE WHERE RowNumber > 1
+
+// Clustered and non clustered indexing
+
+// Find name of a column based on row

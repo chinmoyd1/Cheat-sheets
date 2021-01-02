@@ -180,7 +180,7 @@ join vs get
 				//CompletableFuture is implementation of future with more functionalities
 				//supplyAsync(): takes a method and returns Future of that type
 				public static void supplyAsync() throws Exception {
-					final CompletableFuture<String> java = CompletableFuture.supplyAsync(() -> mostRecentQuestionsAboutErrorFree("java"),executorService);
+					final CompletableFuture<String>   = CompletableFuture.supplyAsync(() -> mostRecentQuestionsAboutErrorFree("java"),executorService);
 					
 					final String javaQuestion = java.get();   //Blocking but you can chain them now 
 					System.out.println("Most Recent Questions About: "+javaQuestion);

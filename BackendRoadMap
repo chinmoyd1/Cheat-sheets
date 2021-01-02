@@ -1,0 +1,61 @@
+How to Become a Good Backend Engineer (Fundamentals)
+
+Communication Protocols
+	- TCP
+	- UDP
+	- HTTP1, HTTP2, HTTP3
+	- WebSockets, Bidirectional communication
+	- GRPC
+
+Web Servers
+	- Serving Content (Static and Dynamic)
+	- Caching
+	- Edge web servers
+	- Type of webservers
+	- Etag
+	- Threading
+	- Proxy
+	
+Databases
+	- ACID
+	- RelationalDB
+	- NoSql
+	- Partitioning
+	- Indexing
+	- Sharding
+
+Proxies
+	- Proxy
+	- Layer 7, Layer 3 proxy
+	- Reverse Proxy
+	- Load Balancer
+	- Caching Layer
+	- Tls termination
+	- Service Mesh
+	
+Caching
+	- Memory Caching
+	- Stateful and Stateless Caching
+	- Cache Evict
+
+Messaging System
+	- RabbitMQ
+	- Kafka (pub/sub)
+	
+API Web Framework
+	- GRPC APIs
+	- REST APIs
+	- SOAP APIs
+
+Message Formats
+	- Protocol Buffer
+	- XML
+	- JSON
+
+Security
+	- Firewall
+
+Microservices
+	
+	
+
